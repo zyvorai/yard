@@ -232,4 +232,4 @@ Keep off the core model until explicitly requested:
 - Full CMMS / ERP replacement on day one
 
 Yard stays the **ops surface + registry**. Depth comes from connectors and
-the remaining Next-lane items above.
+the Later-lane items above.
