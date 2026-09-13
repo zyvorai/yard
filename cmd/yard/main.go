@@ -4,7 +4,7 @@ import (
 	"context"
 	"embed"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -20,8 +20,18 @@ import (
 //go:embed all:static
 var staticRoot embed.FS
 
+func newLogger() *slog.Logger {
+	var handler slog.Handler
+	if env("YARD_LOG_FORMAT", "text") == "json" {
+		handler = slog.NewJSONHandler(os.Stderr, nil)
+	} else {
+		handler = slog.NewTextHandler(os.Stderr, nil)
+	}
+	return slog.New(handler)
+}
+
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	logger := newLogger()
 	addr := env("YARD_LISTEN", ":8080")
 	dsn := api.DefaultDSN()
 	if dir := filepath.Dir(fileFromDSN(dsn)); dir != "" && dir != "." && dir != "/" {
@@ -29,23 +39,25 @@ func main() {
 	}
 	st, err := store.Open(dsn)
 	if err != nil {
-		log.Fatalf("store: %v", err)
+		logger.Error("store", "err", err)
+		os.Exit(1)
 	}
 	defer st.Close()
 
 	res, err := seed.Bootstrap(context.Background(), st)
 	if err != nil {
-		log.Fatalf("bootstrap: %v", err)
+		logger.Error("bootstrap", "err", err)
+		os.Exit(1)
 	}
 	if res != nil && res.IngestToken != "" {
-		log.Printf("bootstrap %s", seed.FormatWelcome(res))
+		logger.Info("bootstrap", "welcome", seed.FormatWelcome(res))
 		dataDir := env("YARD_DATA_DIR", "data")
 		_ = os.MkdirAll(dataDir, 0o755)
 		_ = os.WriteFile(filepath.Join(dataDir, "ingest.token"), []byte(res.IngestToken+"\n"), 0o600)
 		_ = os.WriteFile(filepath.Join(dataDir, "simulator.token"), []byte(res.SimulatorTok+"\n"), 0o600)
 	}
 
-	srv := api.New(st, log.Default())
+	srv := api.New(st, logger)
 	if sub, err := fs.Sub(staticRoot, "static"); err == nil {
 		if _, err := sub.Open("index.html"); err == nil {
 			srv.Static = sub
@@ -59,9 +71,10 @@ func main() {
 
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("yard listening on %s", addr)
+		logger.Info("yard listening", "addr", addr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("http: %v", err)
+			logger.Error("http", "err", err)
+			os.Exit(1)
 		}
 	}()
 

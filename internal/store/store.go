@@ -93,8 +93,22 @@ func (s *Store) queryRow(ctx context.Context, q string, args ...any) *sql.Row {
 
 func (s *Store) Close() error { return s.DB.Close() }
 
-func (s *Store) migrate() error {
-	_, err := s.DB.Exec(`
+// migration is one versioned, forward-only schema change applied inside its
+// own transaction and recorded in schema_migrations. Add new entries here
+// (never edit existing ones) as the schema grows — see baselineSchema below
+// for the pre-versioning DDL that already-deployed databases carry.
+type migration struct {
+	version int
+	sql     string
+}
+
+var migrations = []migration{}
+
+// baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
+// project used before schema_migrations existed. Left exactly as-is (and not
+// migration-tracked) so already-deployed databases are unaffected; every new
+// schema change from here on is a versioned entry in `migrations` instead.
+const baselineSchema = `
 CREATE TABLE IF NOT EXISTS organizations (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL
 );
@@ -178,13 +192,64 @@ CREATE TABLE IF NOT EXISTS severity_policies (
   severity TEXT NOT NULL, runbook TEXT NOT NULL DEFAULT '',
   priority INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
 );
-`)
+`
+
+func (s *Store) migrate() error {
+	if _, err := s.DB.Exec(baselineSchema); err != nil {
+		return err
+	}
+	// Best-effort upgrades for DBs created before newer columns existed on
+	// the baseline tables above (pre-dates schema_migrations; left as-is).
+	_, _ = s.DB.Exec(`ALTER TABLE automations ADD COLUMN config TEXT NOT NULL DEFAULT '{}'`)
+	_, _ = s.DB.Exec(`ALTER TABLE incidents ADD COLUMN runbook TEXT NOT NULL DEFAULT ''`)
+	return s.applyMigrations()
+}
+
+func (s *Store) applyMigrations() error {
+	if _, err := s.DB.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL
+)`); err != nil {
+		return err
+	}
+	applied := map[int]bool{}
+	rows, err := s.DB.Query(`SELECT version FROM schema_migrations`)
 	if err != nil {
 		return err
 	}
-	// Best-effort upgrades for DBs created before newer columns.
-	_, _ = s.DB.Exec(`ALTER TABLE automations ADD COLUMN config TEXT NOT NULL DEFAULT '{}'`)
-	_, _ = s.DB.Exec(`ALTER TABLE incidents ADD COLUMN runbook TEXT NOT NULL DEFAULT ''`)
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			rows.Close()
+			return err
+		}
+		applied[v] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for _, m := range migrations {
+		if applied[m.version] {
+			continue
+		}
+		tx, err := s.DB.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(m.sql); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("schema migration %d: %w", m.version, err)
+		}
+		if _, err := tx.Exec(s.rebind(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`), m.version, now()); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("schema migration %d: record: %w", m.version, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("schema migration %d: commit: %w", m.version, err)
+		}
+	}
 	return nil
 }
 

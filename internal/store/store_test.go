@@ -46,6 +46,32 @@ func TestAssetAndObservationRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
+	st, err := Open("file:memdb_migrations?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var count int
+	if err := st.DB.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
+		t.Fatalf("schema_migrations: %v", err)
+	}
+	if count != len(migrations) {
+		t.Fatalf("expected %d recorded migrations, got %d", len(migrations), count)
+	}
+	// Running the migration step again against the same open connection
+	// must be a no-op, not a duplicate-key error.
+	if err := st.applyMigrations(); err != nil {
+		t.Fatalf("re-applying migrations: %v", err)
+	}
+	if err := st.DB.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
+		t.Fatalf("schema_migrations after re-apply: %v", err)
+	}
+	if count != len(migrations) {
+		t.Fatalf("expected %d recorded migrations after re-apply, got %d", len(migrations), count)
+	}
+}
+
 func TestTenantIsolation(t *testing.T) {
 	st, err := Open("file:memdb2?mode=memory&cache=shared")
 	if err != nil {

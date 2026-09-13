@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,16 +32,16 @@ type Server struct {
 	Engine   *jobs.Engine
 	Hub      *sse.Hub
 	Static   fs.FS
-	Log      *log.Logger
+	Log      *slog.Logger
 	Dispatch *connectors.Dispatcher
 	tokens   map[string]string
 	limiter  *ingestLimiter
 	metrics  *metrics
 }
 
-func New(st *store.Store, logger *log.Logger) *Server {
+func New(st *store.Store, logger *slog.Logger) *Server {
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.Default()
 	}
 	hub := sse.New()
 	eng := &jobs.Engine{Store: st, Hub: hub, Log: logger}
@@ -90,7 +90,33 @@ func (s *Server) Handler() http.Handler {
 	if s.Static != nil {
 		mux.Handle("/", s.spa())
 	}
-	return cors(mux)
+	return s.requestLog(cors(mux))
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// requestLog logs one structured line per request (method, path, status,
+// duration) via the server's slog.Logger.
+func (s *Server) requestLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		s.Log.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+	})
 }
 
 func (s *Server) rateIngest(next http.HandlerFunc) http.HandlerFunc {

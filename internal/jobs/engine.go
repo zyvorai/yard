@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -18,7 +18,7 @@ import (
 type Engine struct {
 	Store *store.Store
 	Hub   *sse.Hub
-	Log   *log.Logger
+	Log   *slog.Logger
 	HTTP  *http.Client
 }
 
@@ -51,13 +51,13 @@ func (e *Engine) StartStaleTicker(ctx context.Context, every time.Duration) {
 				orgs, err := e.Store.ListOrgIDs(ctx)
 				if err != nil {
 					if e.Log != nil {
-						e.Log.Printf("stale ticker orgs: %v", err)
+						e.Log.Error("stale ticker: list orgs", "err", err)
 					}
 					continue
 				}
 				for _, org := range orgs {
 					if err := e.MarkStale(ctx, org); err != nil && e.Log != nil {
-						e.Log.Printf("stale ticker %s: %v", org, err)
+						e.Log.Error("stale ticker", "org", org, "err", err)
 					}
 				}
 			}
@@ -80,11 +80,11 @@ func (e *Engine) StartActionSweeper(ctx context.Context, every time.Duration) {
 			case <-t.C:
 				n, err := e.Store.ExpireActions(ctx)
 				if err != nil && e.Log != nil {
-					e.Log.Printf("action sweeper: %v", err)
+					e.Log.Error("action sweeper", "err", err)
 					continue
 				}
 				if n > 0 && e.Log != nil {
-					e.Log.Printf("action sweeper expired %d", n)
+					e.Log.Info("action sweeper expired", "count", n)
 				}
 			}
 		}
@@ -136,7 +136,7 @@ func (e *Engine) IngestObservation(ctx context.Context, orgID string, in model.I
 	asset.Health = health
 	e.publish(orgID, "asset.health", map[string]any{"id": asset.ID, "health": health, "name": asset.Name})
 	if err := e.applyAutomations(ctx, orgID, asset, obs); err != nil && e.Log != nil {
-		e.Log.Printf("automation error: %v", err)
+		e.Log.Error("automation", "err", err)
 	}
 	return obs, true, nil
 }
@@ -239,7 +239,7 @@ func (e *Engine) fireWebhook(ctx context.Context, orgID string, asset *model.Ass
 	resp, err := e.client().Do(req)
 	if err != nil {
 		if e.Log != nil {
-			e.Log.Printf("webhook %s: %v", url, err)
+			e.Log.Error("webhook", "url", url, "err", err)
 		}
 		return nil
 	}
