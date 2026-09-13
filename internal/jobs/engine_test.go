@@ -78,6 +78,68 @@ func TestDuplicateObservationSkipped(t *testing.T) {
 	}
 }
 
+func TestCapabilityMaxAlarmOpensIncident(t *testing.T) {
+	st, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	org, err := st.CreateOrganization(ctx, "Ops", "ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &model.Asset{OrganizationID: org.ID, Name: "Cold room", ExternalRef: "CR-1", Kind: "sensor"}
+	if err := st.UpsertAsset(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	max := 8.0
+	if err := st.ReplaceCapabilities(ctx, a.ID, []model.Capability{
+		{Name: "temperature", Kind: "measurement", Unit: "°C", Max: &max},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// No literal Threshold: capability_max reads the range from the
+	// capability itself, so operators don't duplicate the number.
+	if err := st.CreateAutomation(ctx, &model.Automation{
+		OrganizationID: org.ID, Name: "Cold room breach", Enabled: true,
+		TriggerKind: "capability_max", Capability: "temperature", Action: "open_incident",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{Store: st}
+
+	_, ok, err := eng.IngestObservation(ctx, org.ID, model.IngestObservation{
+		AssetExternalRef: "CR-1", Capability: "temperature", Value: 9.5, Unit: "°C",
+		ObservedAt: time.Now().UTC(), DedupeKey: "over",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("ingest over max: %v %v", err, ok)
+	}
+	incs, err := st.ListIncidents(ctx, org.ID, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incs) != 1 {
+		t.Fatalf("expected 1 open incident from capability_max breach, got %d", len(incs))
+	}
+
+	_, ok, err = eng.IngestObservation(ctx, org.ID, model.IngestObservation{
+		AssetExternalRef: "CR-1", Capability: "temperature", Value: 4.0, Unit: "°C",
+		ObservedAt: time.Now().UTC(), DedupeKey: "in-range",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("ingest in range: %v %v", err, ok)
+	}
+	incs, err = st.ListIncidents(ctx, org.ID, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incs) != 1 {
+		t.Fatalf("expected still 1 open incident after an in-range value, got %d", len(incs))
+	}
+}
+
 func TestUnknownAssetRejected(t *testing.T) {
 	_, eng, orgID, _ := setup(t)
 	_, _, err := eng.IngestObservation(context.Background(), orgID, model.IngestObservation{

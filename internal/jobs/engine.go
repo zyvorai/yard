@@ -161,17 +161,39 @@ func deriveHealth(cap string, value float64, quality string) string {
 	return "healthy"
 }
 
+// applyAutomations evaluates every enabled automation against a fresh
+// observation. Besides the original "threshold" trigger (a literal operator
+// + value on the rule itself), "capability_min"/"capability_max" fire off
+// the matching Capability's own Min/Max range instead of a duplicated
+// literal — so alarming on a capability's declared range needs no threshold
+// entry, and soft-vs-hard severity is just the operator's choice of the
+// existing "notify" vs "open_incident" action.
 func (e *Engine) applyAutomations(ctx context.Context, orgID string, asset *model.Asset, obs *model.Observation) error {
 	autos, err := e.Store.ListAutomations(ctx, orgID)
 	if err != nil {
 		return err
 	}
+	var caps []model.Capability
+	capsLoaded := false
+	capabilityFor := func(name string) *model.Capability {
+		if !capsLoaded {
+			caps, _ = e.Store.ListCapabilities(ctx, asset.ID)
+			capsLoaded = true
+		}
+		for i := range caps {
+			if caps[i].Name == name {
+				return &caps[i]
+			}
+		}
+		return nil
+	}
 	for _, a := range autos {
-		if !a.Enabled {
+		if !a.Enabled || a.Capability != obs.Capability {
 			continue
 		}
-		if a.TriggerKind == "threshold" && a.Capability == obs.Capability {
-			hit := false
+		hit := false
+		switch a.TriggerKind {
+		case "threshold":
 			switch a.Operator {
 			case "gt":
 				hit = obs.Value > a.Threshold
@@ -182,12 +204,22 @@ func (e *Engine) applyAutomations(ctx context.Context, orgID string, asset *mode
 			case "lte":
 				hit = obs.Value <= a.Threshold
 			}
-			if !hit {
-				continue
+		case "capability_min":
+			if c := capabilityFor(obs.Capability); c != nil && c.Min != nil {
+				hit = obs.Value < *c.Min
 			}
-			if err := e.runAutomationAction(ctx, orgID, asset, a, obs); err != nil {
-				return err
+		case "capability_max":
+			if c := capabilityFor(obs.Capability); c != nil && c.Max != nil {
+				hit = obs.Value > *c.Max
 			}
+		default:
+			continue
+		}
+		if !hit {
+			continue
+		}
+		if err := e.runAutomationAction(ctx, orgID, asset, a, obs); err != nil {
+			return err
 		}
 	}
 	return nil

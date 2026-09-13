@@ -134,6 +134,18 @@ export type Telemetry = {
   fresh: boolean;
 };
 
+export type Observation = {
+  id: string;
+  asset_id: string;
+  capability: string;
+  value: number;
+  unit: string;
+  quality: string;
+  source: string;
+  observed_at: string;
+  received_at: string;
+};
+
 export type Overview = {
   assets_total: number;
   assets_healthy: number;

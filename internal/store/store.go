@@ -102,7 +102,9 @@ type migration struct {
 	sql     string
 }
 
-var migrations = []migration{}
+var migrations = []migration{
+	{1, `CREATE INDEX IF NOT EXISTS observations_org_asset_time ON observations(organization_id, asset_id, observed_at)`},
+}
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
 // project used before schema_migrations existed. Left exactly as-is (and not
@@ -620,7 +622,10 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?)`, o.ID, o.OrganizationID, o.AssetID, o.Capability,
 	return true, nil
 }
 
-func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string, limit int) ([]model.Observation, error) {
+// ListObservations returns observations for an org (optionally scoped to one
+// asset/capability), newest first. from/to bound observed_at when non-zero;
+// pass zero time.Time values for an unbounded range.
+func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string, from, to time.Time, limit int) ([]model.Observation, error) {
 	if limit <= 0 || limit > 2000 {
 		limit = 400
 	}
@@ -633,6 +638,14 @@ func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string
 	if cap != "" {
 		q += ` AND capability=?`
 		args = append(args, cap)
+	}
+	if !from.IsZero() {
+		q += ` AND observed_at >= ?`
+		args = append(args, from.UTC().Format(time.RFC3339Nano))
+	}
+	if !to.IsZero() {
+		q += ` AND observed_at <= ?`
+		args = append(args, to.UTC().Format(time.RFC3339Nano))
 	}
 	q += ` ORDER BY observed_at DESC LIMIT ?`
 	args = append(args, limit)

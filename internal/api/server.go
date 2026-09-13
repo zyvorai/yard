@@ -158,6 +158,15 @@ func readJSON(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
+// parseRangeParam parses an RFC3339 timestamp query param, returning the
+// zero time.Time (an unbounded edge) for an empty string.
+func parseRangeParam(v string) (time.Time, error) {
+	if v == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339, v)
+}
+
 func bearer(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if strings.HasPrefix(strings.ToLower(h), "bearer ") {
@@ -424,7 +433,7 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 	}
 	if len(parts) == 1 && r.Method == http.MethodGet {
 		caps, _ := s.Store.ListCapabilities(r.Context(), a.ID)
-		obs, _ := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, "", 80)
+		obs, _ := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, "", time.Time{}, time.Time{}, 80)
 		ev, _ := s.Store.ListEventsForAsset(r.Context(), u.OrganizationID, a.ID, 40)
 		wos, _ := s.Store.ListWorkOrdersForAsset(r.Context(), u.OrganizationID, a.ID)
 		writeJSON(w, 200, map[string]any{"asset": a, "capabilities": caps, "observations": obs, "events": ev, "work_orders": wos})
@@ -540,7 +549,17 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 	if len(parts) >= 2 && parts[1] == "observations" {
 		cap := r.URL.Query().Get("capability")
 		limit := 400
-		obs, err := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, cap, limit)
+		from, err := parseRangeParam(r.URL.Query().Get("from"))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid from: " + err.Error()})
+			return
+		}
+		to, err := parseRangeParam(r.URL.Query().Get("to"))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid to: " + err.Error()})
+			return
+		}
+		obs, err := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, cap, from, to, limit)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return

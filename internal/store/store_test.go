@@ -46,6 +46,49 @@ func TestAssetAndObservationRoundTrip(t *testing.T) {
 	}
 }
 
+func TestListObservationsTimeRange(t *testing.T) {
+	st, err := Open("file:memdb_obs_range?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	org, err := st.CreateOrganization(ctx, "Acme", "acme-range")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &model.Asset{OrganizationID: org.ID, Name: "Pump", ExternalRef: "P-RANGE", Kind: "machine"}
+	if err := st.UpsertAsset(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i, at := range []time.Time{base, base.Add(time.Hour), base.Add(2 * time.Hour), base.Add(3 * time.Hour)} {
+		ok, err := st.InsertObservation(ctx, &model.Observation{
+			OrganizationID: org.ID, AssetID: a.ID, Capability: "temperature", Value: float64(i),
+			ObservedAt: at, DedupeKey: at.String(),
+		})
+		if err != nil || !ok {
+			t.Fatalf("insert %d: %v %v", i, err, ok)
+		}
+	}
+	// [1h, 2h] inclusive on both ends should return exactly the two middle points.
+	got, err := st.ListObservations(ctx, org.ID, a.ID, "", base.Add(time.Hour), base.Add(2*time.Hour), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 observations in range, got %d", len(got))
+	}
+	// A zero-value from/to means unbounded.
+	all, err := st.ListObservations(ctx, org.ID, a.ID, "", time.Time{}, time.Time{}, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 4 {
+		t.Fatalf("expected all 4 observations unbounded, got %d", len(all))
+	}
+}
+
 func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	st, err := Open("file:memdb_migrations?mode=memory&cache=shared")
 	if err != nil {

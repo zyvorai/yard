@@ -845,6 +845,19 @@ tr.selected td { background: var(--accent-soft); }
 .spark { display: flex; align-items: flex-end; gap: 2px; height: 36px; }
 .spark i { display: block; width: 6px; background: var(--accent); border-radius: 2px; opacity: 0.85; }
 
+.signal-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.signal-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--material-thin-bg);
+  border-radius: var(--radius-md);
+  min-width: 96px;
+}
+.signal-name { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.signal-value { font-size: 14px; font-weight: 600; color: var(--ink); }
+
 .empty { color: var(--muted); padding: 28px 8px; text-align: center; }
 
 .runbook {
