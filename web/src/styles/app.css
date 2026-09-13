@@ -685,9 +685,46 @@ tr.selected td { background: var(--accent-soft); }
 }
 .map-recenter:hover { background: var(--nav-hover); }
 
-.diag { background: #0b0b0d; color: #f5f5f7; min-height: 70vh; border-radius: 20px; padding: 18px; }
-.diag input { width: 100%; background: #161618; color: #f5f5f7; border: 1px solid #2a2a2e; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
-.diag pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; margin: 0; }
+.diag {
+  background: #0b0b0d; color: #f5f5f7; min-height: 70vh;
+  border-radius: 20px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+}
+.diag-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px; background: #1c1c1e;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.diag-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.diag-dot--red { background: #ff5f57; }
+.diag-dot--yellow { background: #febc2e; }
+.diag-dot--green { background: #28c840; }
+.diag-bar-title {
+  flex: 1; text-align: center; margin-right: 41px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: #98989d;
+}
+.diag-body-wrap { padding: 18px; }
+.diag input {
+  width: 100%; background: #161618; color: #f5f5f7;
+  border: 1px solid #2a2a2e; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.diag-log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.9; }
+.diag-line {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+  padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.diag-ts { color: #6e6e73; flex-shrink: 0; }
+.diag-sev { flex-shrink: 0; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; width: 62px; }
+.diag-sev--critical { color: #ff5f57; }
+.diag-sev--warning { color: #febc2e; }
+.diag-sev--info { color: #28c840; }
+.diag-kind { color: #64d2ff; flex-shrink: 0; }
+.diag-title { color: #f5f5f7; }
+.diag-body { color: #98989d; }
+.diag-empty { color: #6e6e73; padding: 20px 0; }
 
 .spark { display: flex; align-items: flex-end; gap: 2px; height: 36px; }
 .spark i { display: block; width: 6px; background: var(--accent); border-radius: 2px; opacity: 0.85; }
