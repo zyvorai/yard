@@ -2,6 +2,8 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { getToken } from "./lib/api";
 import Shell from "./components/Shell";
 import Login from "./pages/Login";
+import AcceptInvite from "./pages/AcceptInvite";
+import ResetPassword from "./pages/ResetPassword";
 import Overview from "./pages/Overview";
 import Assets from "./pages/Assets";
 import Sites from "./pages/Sites";
@@ -25,6 +27,8 @@ export default function App() {
   const loc = useLocation();
   const nav = useNavigate();
   if (loc.pathname === "/login") return <Login onIn={() => nav("/")} />;
+  if (loc.pathname === "/accept-invite") return <AcceptInvite onIn={() => nav("/")} />;
+  if (loc.pathname === "/reset-password") return <ResetPassword />;
   return (
     <Guard>
       <Shell>

@@ -9,14 +9,16 @@ import (
 	"github.com/zyvorai/yard/internal/model"
 )
 
+// roleOK reports whether u's role satisfies a requested access level. A
+// missing/unrecognized role is treated as the most restrictive (read-only)
+// rather than defaulting to admin — this used to silently grant an empty
+// Role write access, which is the wrong failure direction for an
+// authorization check.
 func roleOK(u *model.User, write bool) bool {
-	role := strings.ToLower(u.Role)
-	if role == "" {
-		role = "admin"
-	}
 	if !write {
 		return true
 	}
+	role := strings.ToLower(u.Role)
 	return role == "admin" || role == "operator"
 }
 
@@ -25,6 +27,17 @@ func (s *Server) requireWrite(w http.ResponseWriter, u *model.User) bool {
 		return true
 	}
 	writeJSON(w, 403, map[string]string{"error": "forbidden: viewer cannot mutate"})
+	return false
+}
+
+// requireAdmin gates actions that affect other users' accounts (invite,
+// role changes, deactivation) — stricter than requireWrite, which also
+// allows the "operator" role.
+func (s *Server) requireAdmin(w http.ResponseWriter, u *model.User) bool {
+	if strings.ToLower(u.Role) == "admin" {
+		return true
+	}
+	writeJSON(w, 403, map[string]string{"error": "forbidden: admin role required"})
 	return false
 }
 
@@ -60,12 +73,12 @@ func (l *ingestLimiter) allow(key string) bool {
 }
 
 type metrics struct {
-	mu            sync.Mutex
-	ingestOK      int64
-	ingestReject  int64
-	loginOK       int64
-	loginFail     int64
-	staleRuns     int64
+	mu           sync.Mutex
+	ingestOK     int64
+	ingestReject int64
+	loginOK      int64
+	loginFail    int64
+	staleRuns    int64
 }
 
 func (m *metrics) inc(field *int64) {

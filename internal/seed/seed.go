@@ -53,6 +53,7 @@ func Bootstrap(ctx context.Context, st *store.Store) (*Result, error) {
 		Email:          DemoEmail,
 		DisplayName:    "Operations Admin",
 		Role:           "admin",
+		Active:         true,
 		PasswordHash:   string(hash),
 	}
 	if err := st.CreateUser(ctx, user); err != nil {

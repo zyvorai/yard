@@ -64,6 +64,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/metrics", s.metrics.handler)
 	mux.HandleFunc("/api/v1/auth/login", s.login)
 	mux.HandleFunc("/api/v1/auth/me", s.withUser(s.me))
+	mux.HandleFunc("/api/v1/auth/accept-invite", s.acceptInvite)
+	mux.HandleFunc("/api/v1/auth/request-reset", s.requestReset)
+	mux.HandleFunc("/api/v1/auth/reset", s.resetPassword)
+	mux.HandleFunc("/api/v1/admin/users", s.withUser(s.adminUsers))
+	mux.HandleFunc("/api/v1/api-keys", s.withUser(s.apiKeys))
 	mux.HandleFunc("/api/v1/overview", s.withUser(s.overview))
 	mux.HandleFunc("/api/v1/sites", s.withUser(s.sites))
 	mux.HandleFunc("/api/v1/sites/", s.withUser(s.siteItem))
@@ -192,6 +197,9 @@ type ctxKey int
 const userKey ctxKey = 1
 const connKey ctxKey = 2
 
+// withUser accepts either a session token (from login) or a long-lived
+// human API key (from POST /api/v1/api-keys) — both resolve to a
+// model.User and share the same downstream authorization checks.
 func (s *Server) withUser(fn func(http.ResponseWriter, *http.Request, *model.User)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tok := bearer(r)
@@ -199,11 +207,18 @@ func (s *Server) withUser(fn func(http.ResponseWriter, *http.Request, *model.Use
 			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
 			return
 		}
-		u, err := s.Store.SessionUser(r.Context(), tok)
+		if u, err := s.Store.SessionUser(r.Context(), tok); err == nil {
+			fn(w, r.WithContext(context.WithValue(r.Context(), userKey, u)), u)
+			return
+		}
+		sum := sha256.Sum256([]byte(tok))
+		hash := hex.EncodeToString(sum[:])
+		u, err := s.Store.UserByAPIKeyHash(r.Context(), hash)
 		if err != nil {
 			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
 			return
 		}
+		_ = s.Store.TouchAPIKeyHash(r.Context(), hash)
 		fn(w, r.WithContext(context.WithValue(r.Context(), userKey, u)), u)
 	}
 }
@@ -240,7 +255,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, err := s.Store.UserByEmail(r.Context(), in.Email)
-	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.Password)) != nil {
+	if err != nil || !u.Active || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.Password)) != nil {
 		s.metrics.inc(&s.metrics.loginFail)
 		writeJSON(w, 401, map[string]string{"error": "invalid credentials"})
 		return
@@ -256,6 +271,253 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request, u *model.User) {
 	writeJSON(w, 200, u)
+}
+
+// adminUsers lists, invites, and edits the roles/active state of an
+// organization's users. Admin-only: only admins may manage other accounts.
+func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request, u *model.User) {
+	if !s.requireAdmin(w, u) {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListUsers(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		var in struct {
+			Email       string `json:"email"`
+			DisplayName string `json:"display_name"`
+			Role        string `json:"role"`
+		}
+		if err := readJSON(r, &in); err != nil || in.Email == "" {
+			writeJSON(w, 400, map[string]string{"error": "email required"})
+			return
+		}
+		if in.Role == "" {
+			in.Role = "viewer"
+		}
+		// An invited user can't log in with this hash — accept-invite
+		// overwrites it with a real bcrypt hash of their own password.
+		unusable, _ := bcrypt.GenerateFromPassword([]byte(idgen.Secret(24)), 10)
+		nu := &model.User{
+			OrganizationID: u.OrganizationID,
+			Email:          in.Email,
+			DisplayName:    in.DisplayName,
+			Role:           in.Role,
+			Active:         true,
+			PasswordHash:   string(unusable),
+		}
+		if err := s.Store.CreateUser(r.Context(), nu); err != nil {
+			writeJSON(w, 409, map[string]string{"error": "email already exists"})
+			return
+		}
+		token, err := s.Store.CreateInviteToken(r.Context(), nu.ID, 72*time.Hour)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if s.Log != nil {
+			s.Log.Info("user invited", "email", nu.Email, "invite_token", token)
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "user.invite", nu.ID, nu.Email)
+		writeJSON(w, 201, map[string]any{"user": nu, "invite_token": token})
+	case http.MethodPatch:
+		var in struct {
+			ID     string  `json:"id"`
+			Role   *string `json:"role"`
+			Active *bool   `json:"active"`
+		}
+		if err := readJSON(r, &in); err != nil || in.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id required"})
+			return
+		}
+		if in.Role != nil {
+			if err := s.Store.UpdateUserRole(r.Context(), u.OrganizationID, in.ID, *in.Role); err != nil {
+				writeJSON(w, 404, map[string]string{"error": "not found"})
+				return
+			}
+		}
+		if in.Active != nil {
+			if err := s.Store.SetUserActive(r.Context(), u.OrganizationID, in.ID, *in.Active); err != nil {
+				writeJSON(w, 404, map[string]string{"error": "not found"})
+				return
+			}
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "user.update", in.ID, "")
+		writeJSON(w, 200, map[string]string{"status": "ok"})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+// acceptInvite lets a newly admin-invited user set their own password and
+// signs them in immediately, same response shape as login.
+func (s *Server) acceptInvite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var in struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := readJSON(r, &in); err != nil || in.Token == "" || len(in.Password) < 8 {
+		writeJSON(w, 400, map[string]string{"error": "token and a password of at least 8 characters are required"})
+		return
+	}
+	userID, err := s.Store.ConsumeInviteToken(r.Context(), in.Token)
+	if err != nil {
+		writeJSON(w, 401, map[string]string{"error": "invalid or expired invite"})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), 10)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "hash"})
+		return
+	}
+	if err := s.Store.SetUserPassword(r.Context(), userID, string(hash)); err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	u, err := s.Store.UserByID(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	sess, err := s.Store.CreateSession(r.Context(), u.ID, 12*time.Hour)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "session"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"token": sess.Token, "user": u, "expires_at": sess.ExpiresAt})
+}
+
+// requestReset issues a password-reset token for the given email if an
+// account exists, always responding 200 either way so the endpoint can't be
+// used to enumerate registered emails. The token itself is deliberately
+// NOT returned in this response (unlike acceptInvite's admin-issued invite
+// token) since this endpoint is reachable by anyone who knows an email
+// address; it's only surfaced server-side (log line) until real email
+// delivery is wired up with the same YARD_SMTP_* config as the automation
+// email action.
+func (s *Server) requestReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var in struct {
+		Email string `json:"email"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	if u, err := s.Store.UserByEmail(r.Context(), in.Email); err == nil && u.Active {
+		if token, err := s.Store.CreatePasswordResetToken(r.Context(), u.ID, time.Hour); err == nil && s.Log != nil {
+			scheme := "http"
+			if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+				scheme = "https"
+			}
+			link := fmt.Sprintf("%s://%s/reset-password?token=%s", scheme, r.Host, token)
+			s.Log.Info("password reset requested", "email", u.Email, "reset_link", link)
+		}
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var in struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := readJSON(r, &in); err != nil || in.Token == "" || len(in.Password) < 8 {
+		writeJSON(w, 400, map[string]string{"error": "token and a password of at least 8 characters are required"})
+		return
+	}
+	userID, err := s.Store.ConsumePasswordResetToken(r.Context(), in.Token)
+	if err != nil {
+		writeJSON(w, 401, map[string]string{"error": "invalid or expired reset token"})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), 10)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "hash"})
+		return
+	}
+	if err := s.Store.SetUserPassword(r.Context(), userID, string(hash)); err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+// apiKeys is self-service: any authenticated user manages their own keys
+// (not admin-gated — a human API key stands in for that person's own
+// session, same trust level as their password).
+func (s *Server) apiKeys(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListAPIKeysForUser(r.Context(), u.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		var in struct {
+			Name string `json:"name"`
+		}
+		if err := readJSON(r, &in); err != nil || in.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "name required"})
+			return
+		}
+		raw := "yard_key_" + idgen.Secret(20)
+		sum := sha256.Sum256([]byte(raw))
+		hint := raw
+		if len(hint) > 12 {
+			hint = hint[:12] + "…"
+		}
+		key := &model.APIKey{
+			OrganizationID: u.OrganizationID,
+			UserID:         u.ID,
+			Name:           in.Name,
+			TokenHash:      hex.EncodeToString(sum[:]),
+			TokenHint:      hint,
+		}
+		if err := s.Store.CreateAPIKey(r.Context(), key); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "apikey.create", key.ID, key.Name)
+		writeJSON(w, 201, map[string]any{"api_key": key, "token": raw})
+	case http.MethodPatch:
+		var in struct {
+			ID     string `json:"id"`
+			Delete bool   `json:"delete"`
+		}
+		if err := readJSON(r, &in); err != nil || in.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id required"})
+			return
+		}
+		if in.Delete {
+			if err := s.Store.DeleteAPIKey(r.Context(), u.ID, in.ID); err != nil {
+				writeJSON(w, 404, map[string]string{"error": "not found"})
+				return
+			}
+			_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "apikey.delete", in.ID, "")
+		}
+		writeJSON(w, 200, map[string]string{"status": "ok"})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request, u *model.User) {

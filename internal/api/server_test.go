@@ -9,9 +9,20 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/zyvorai/yard/internal/model"
 	"github.com/zyvorai/yard/internal/seed"
 	"github.com/zyvorai/yard/internal/store"
 )
+
+func TestRoleOKEmptyRoleIsRestrictive(t *testing.T) {
+	u := &model.User{Role: ""}
+	if roleOK(u, true) {
+		t.Fatal("an empty/unrecognized role must not be granted write access")
+	}
+	if !roleOK(u, false) {
+		t.Fatal("read access should still be allowed regardless of role")
+	}
+}
 
 func TestLoginAndFirstReleaseWorkflow(t *testing.T) {
 	st, err := store.Open("file:api-test?mode=memory&cache=shared")
@@ -358,5 +369,197 @@ func TestStreamSupportsFlushThroughMiddleware(t *testing.T) {
 	}
 	if string(buf) != want {
 		t.Fatalf("unexpected initial SSE event: %q", buf)
+	}
+}
+
+func loginAs(t *testing.T, ts *httptest.Server, email, password string) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"email": email, "password": password})
+	resp, err := http.Post(ts.URL+"/api/v1/auth/login", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("login %q: expected 200, got %d", email, resp.StatusCode)
+	}
+	var login struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&login)
+	return login.Token
+}
+
+func TestInviteAcceptRoleAndDeactivate(t *testing.T) {
+	st, err := store.Open("file:api-test-invite?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := seed.Bootstrap(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(New(st, nil).Handler())
+	defer ts.Close()
+
+	adminToken := loginAs(t, ts, seed.DemoEmail, seed.DemoPassword)
+
+	inviteBody, _ := json.Marshal(map[string]string{"email": "newop@example.com", "display_name": "New Op", "role": "operator"})
+	ireq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", bytes.NewReader(inviteBody))
+	ireq.Header.Set("Authorization", "Bearer "+adminToken)
+	iresp, err := http.DefaultClient.Do(ireq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer iresp.Body.Close()
+	if iresp.StatusCode != 201 {
+		t.Fatalf("invite: expected 201, got %d", iresp.StatusCode)
+	}
+	var invited struct {
+		User        model.User `json:"user"`
+		InviteToken string     `json:"invite_token"`
+	}
+	_ = json.NewDecoder(iresp.Body).Decode(&invited)
+	if invited.InviteToken == "" || invited.User.ID == "" {
+		t.Fatal("missing invite token or user id")
+	}
+
+	acceptBody, _ := json.Marshal(map[string]string{"token": invited.InviteToken, "password": "correct horse battery staple"})
+	aresp, err := http.Post(ts.URL+"/api/v1/auth/accept-invite", "application/json", bytes.NewReader(acceptBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer aresp.Body.Close()
+	if aresp.StatusCode != 200 {
+		t.Fatalf("accept-invite: expected 200, got %d", aresp.StatusCode)
+	}
+	var accepted struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(aresp.Body).Decode(&accepted)
+	if accepted.Token == "" {
+		t.Fatal("accept-invite did not return a session token")
+	}
+
+	replay, err := http.Post(ts.URL+"/api/v1/auth/accept-invite", "application/json", bytes.NewReader(acceptBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replay.Body.Close()
+	if replay.StatusCode != 401 {
+		t.Fatalf("replayed invite token: expected 401, got %d", replay.StatusCode)
+	}
+
+	opInviteBody, _ := json.Marshal(map[string]string{"email": "blocked@example.com"})
+	opReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/admin/users", bytes.NewReader(opInviteBody))
+	opReq.Header.Set("Authorization", "Bearer "+accepted.Token)
+	opResp, err := http.DefaultClient.Do(opReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer opResp.Body.Close()
+	if opResp.StatusCode != 403 {
+		t.Fatalf("operator invite: expected 403 (admin-only), got %d", opResp.StatusCode)
+	}
+
+	// Deactivating the user must invalidate their existing session
+	// immediately, not just block their next login.
+	deactivateBody, _ := json.Marshal(map[string]any{"id": invited.User.ID, "active": false})
+	dreq, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/admin/users", bytes.NewReader(deactivateBody))
+	dreq.Header.Set("Authorization", "Bearer "+adminToken)
+	dresp, err := http.DefaultClient.Do(dreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dresp.Body.Close()
+	if dresp.StatusCode != 200 {
+		t.Fatalf("deactivate: expected 200, got %d", dresp.StatusCode)
+	}
+
+	meReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/auth/me", nil)
+	meReq.Header.Set("Authorization", "Bearer "+accepted.Token)
+	meResp, err := http.DefaultClient.Do(meReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer meResp.Body.Close()
+	if meResp.StatusCode != 401 {
+		t.Fatalf("deactivated user's session: expected 401, got %d", meResp.StatusCode)
+	}
+}
+
+func TestAPIKeyAuthenticatesLikeASession(t *testing.T) {
+	st, err := store.Open("file:api-test-apikey?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := seed.Bootstrap(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(New(st, nil).Handler())
+	defer ts.Close()
+
+	token := loginAs(t, ts, seed.DemoEmail, seed.DemoPassword)
+
+	createBody, _ := json.Marshal(map[string]string{"name": "CI script"})
+	creq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/api-keys", bytes.NewReader(createBody))
+	creq.Header.Set("Authorization", "Bearer "+token)
+	cresp, err := http.DefaultClient.Do(creq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cresp.Body.Close()
+	if cresp.StatusCode != 201 {
+		t.Fatalf("create key: expected 201, got %d", cresp.StatusCode)
+	}
+	var created struct {
+		APIKey struct {
+			ID string `json:"id"`
+		} `json:"api_key"`
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(cresp.Body).Decode(&created)
+	if created.Token == "" || created.APIKey.ID == "" {
+		t.Fatal("missing api key token or id")
+	}
+
+	meReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/auth/me", nil)
+	meReq.Header.Set("Authorization", "Bearer "+created.Token)
+	meResp, err := http.DefaultClient.Do(meReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer meResp.Body.Close()
+	if meResp.StatusCode != 200 {
+		t.Fatalf("api key auth: expected 200, got %d", meResp.StatusCode)
+	}
+	var me model.User
+	_ = json.NewDecoder(meResp.Body).Decode(&me)
+	if me.Email != seed.DemoEmail {
+		t.Fatalf("api key resolved to wrong user: %s", me.Email)
+	}
+
+	deleteBody, _ := json.Marshal(map[string]any{"id": created.APIKey.ID, "delete": true})
+	dreq, _ := http.NewRequest(http.MethodPatch, ts.URL+"/api/v1/api-keys", bytes.NewReader(deleteBody))
+	dreq.Header.Set("Authorization", "Bearer "+token)
+	dresp, err := http.DefaultClient.Do(dreq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dresp.Body.Close()
+	if dresp.StatusCode != 200 {
+		t.Fatalf("delete key: expected 200, got %d", dresp.StatusCode)
+	}
+
+	me2Req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/auth/me", nil)
+	me2Req.Header.Set("Authorization", "Bearer "+created.Token)
+	me2Resp, err := http.DefaultClient.Do(me2Req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer me2Resp.Body.Close()
+	if me2Resp.StatusCode != 401 {
+		t.Fatalf("revoked api key: expected 401, got %d", me2Resp.StatusCode)
 	}
 }

@@ -171,6 +171,25 @@ export type Connector = {
   last_sync_at?: string;
 };
 
+export type AdminUser = {
+  id: string;
+  organization_id: string;
+  email: string;
+  display_name: string;
+  role: string;
+  active: boolean;
+  created_at: string;
+};
+
+export type APIKeyInfo = {
+  id: string;
+  user_id: string;
+  name: string;
+  token_hint: string;
+  created_at: string;
+  last_used_at?: string;
+};
+
 export type Automation = {
   id: string;
   name: string;

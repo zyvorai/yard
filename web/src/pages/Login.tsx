@@ -5,6 +5,9 @@ export default function Login({ onIn }: { onIn: () => void }) {
   const [email, setEmail] = useState("admin@yard.local");
   const [password, setPassword] = useState("yard-admin");
   const [err, setErr] = useState("");
+  const [forgot, setForgot] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setErr("");
@@ -19,6 +22,40 @@ export default function Login({ onIn }: { onIn: () => void }) {
       setErr("Those credentials were not accepted.");
     }
   }
+
+  async function requestReset(e: FormEvent) {
+    e.preventDefault();
+    await api("/api/v1/auth/request-reset", { method: "POST", body: JSON.stringify({ email }) });
+    setResetSent(true);
+  }
+
+  if (forgot) {
+    return (
+      <div className="auth">
+        <form className="auth-card" onSubmit={requestReset}>
+          <img src="/logo.svg" width={40} height={40} alt="Zyvor" />
+          <p className="kicker" style={{ marginTop: 16 }}>zyvor.dev</p>
+          <h1>Reset password</h1>
+          {resetSent ? (
+            <p className="lede">If that email has an account, an administrator can find the reset link in the server log — ask them for it.</p>
+          ) : (
+            <>
+              <p className="lede">Enter your email and ask your administrator to check the server log for the reset link.</p>
+              <div className="field">
+                <label htmlFor="reset-email">Email</label>
+                <input id="reset-email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" />
+              </div>
+              <button className="btn accent" type="submit" style={{ width: "100%", marginTop: 8 }}>
+                Send reset link
+              </button>
+            </>
+          )}
+          <p className="hint"><a href="#" onClick={(e) => { e.preventDefault(); setForgot(false); setResetSent(false); }}>Back to sign in</a></p>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="auth">
       <form className="auth-card" onSubmit={submit}>
@@ -38,7 +75,9 @@ export default function Login({ onIn }: { onIn: () => void }) {
         <button className="btn accent" type="submit" style={{ width: "100%", marginTop: 8 }}>
           Continue
         </button>
-        <p className="hint">Demo: admin@yard.local / yard-admin</p>
+        <p className="hint">
+          Demo: admin@yard.local / yard-admin · <a href="#" onClick={(e) => { e.preventDefault(); setForgot(true); }}>Forgot password?</a>
+        </p>
       </form>
     </div>
   );

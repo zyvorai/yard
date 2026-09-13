@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api, Connector, SeverityPolicy } from "../lib/api";
+import { api, AdminUser, APIKeyInfo, Connector, SeverityPolicy } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
 import { GroupedList, GroupedRow } from "../components/GroupedList";
 
 type Audit = { id: string; actor: string; action: string; object: string; detail: string; created_at: string };
 type Me = { id: string; email: string; display_name: string; role: string; organization_id: string };
+
+const emptyInvite = { email: "", display_name: "", role: "viewer" };
 
 function ConnectorIcon() {
   return (
@@ -34,24 +36,96 @@ export default function Admin() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [policies, setPolicies] = useState<SeverityPolicy[]>([]);
   const [me, setMe] = useState<Me | null>(null);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [apiKeys, setApiKeys] = useState<APIKeyInfo[]>([]);
   const [tokenReveal, setTokenReveal] = useState<Record<string, string>>({});
+  const [inviteReveal, setInviteReveal] = useState<Record<string, string>>({});
+  const [keyReveal, setKeyReveal] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState("");
   const [form, setForm] = useState(emptyPolicy);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [inviteForm, setInviteForm] = useState(emptyInvite);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [keyName, setKeyName] = useState("");
 
   async function load() {
-    const [audit, cons, user, pols] = await Promise.all([
+    const [audit, cons, user, pols, keys] = await Promise.all([
       api<Audit[]>("/api/v1/audit"),
       api<Connector[]>("/api/v1/connectors"),
       api<Me>("/api/v1/auth/me"),
       api<SeverityPolicy[]>("/api/v1/severity-policies"),
+      api<APIKeyInfo[]>("/api/v1/api-keys"),
     ]);
     setRows(audit);
     setConnectors(cons);
     setMe(user);
     setPolicies(pols);
+    setApiKeys(keys);
+    if (user.role === "admin") {
+      try {
+        setUsers(await api<AdminUser[]>("/api/v1/admin/users"));
+      } catch {
+        setUsers([]);
+      }
+    }
   }
   useEffect(() => { load(); }, []);
+
+  async function invite(e: FormEvent) {
+    e.preventDefault();
+    setMsg("");
+    try {
+      const res = await api<{ user: AdminUser; invite_token: string }>("/api/v1/admin/users", {
+        method: "POST",
+        body: JSON.stringify({
+          email: inviteForm.email.trim(),
+          display_name: inviteForm.display_name.trim(),
+          role: inviteForm.role,
+        }),
+      });
+      setInviteReveal((m) => ({ ...m, [res.user.id]: res.invite_token }));
+      setMsg(`Invited ${res.user.email} — share this link once: ${window.location.origin}/accept-invite?token=${res.invite_token}`);
+      setInviteForm(emptyInvite);
+      setInviteOpen(false);
+      await load();
+    } catch (ex) {
+      setMsg(ex instanceof Error ? ex.message : "invite failed");
+    }
+  }
+
+  async function setRole(u: AdminUser, role: string) {
+    await api("/api/v1/admin/users", { method: "PATCH", body: JSON.stringify({ id: u.id, role }) });
+    await load();
+  }
+
+  async function setActive(u: AdminUser, active: boolean) {
+    if (!active && !confirm(`Deactivate ${u.email}? They will be signed out immediately.`)) return;
+    await api("/api/v1/admin/users", { method: "PATCH", body: JSON.stringify({ id: u.id, active }) });
+    await load();
+  }
+
+  async function createKey(e: FormEvent) {
+    e.preventDefault();
+    setMsg("");
+    try {
+      const res = await api<{ api_key: APIKeyInfo; token: string }>("/api/v1/api-keys", {
+        method: "POST",
+        body: JSON.stringify({ name: keyName.trim() }),
+      });
+      setKeyReveal((m) => ({ ...m, [res.api_key.id]: res.token }));
+      setMsg(`New API key "${res.api_key.name}" — copy it now; it is shown once.`);
+      setKeyName("");
+      await load();
+    } catch (ex) {
+      setMsg(ex instanceof Error ? ex.message : "create key failed");
+    }
+  }
+
+  async function revokeKey(k: APIKeyInfo) {
+    if (!confirm(`Revoke API key "${k.name}"?`)) return;
+    await api("/api/v1/api-keys", { method: "PATCH", body: JSON.stringify({ id: k.id, delete: true }) });
+    await load();
+  }
 
   async function rotate(c: Connector) {
     setMsg("");
@@ -125,7 +199,7 @@ export default function Admin() {
       <div className="topbar">
         <div>
           <h1>Administration</h1>
-          <p className="lede">Workspace, severity policies, connector credentials, and audit history.</p>
+          <p className="lede">Workspace, users, severity policies, connector credentials, API keys, and audit history.</p>
         </div>
       </div>
       {msg && <p className="lede" style={{ marginBottom: 12 }}>{msg}</p>}
@@ -148,6 +222,71 @@ export default function Admin() {
           <p className="lede">Match capability or automation → severity + runbook</p>
         </div>
       </div>
+
+      {me?.role === "admin" && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="topbar" style={{ marginBottom: 12 }}>
+            <h2>Users</h2>
+            <button type="button" className="btn small accent" onClick={() => setInviteOpen((v) => !v)}>
+              {inviteOpen ? "Cancel" : "Invite user"}
+            </button>
+          </div>
+          {inviteOpen && (
+            <form className="form-card" onSubmit={invite} style={{ marginBottom: 16, padding: 0, border: "none", background: "transparent" }}>
+              <div className="form-grid">
+                <label>Email<input type="email" value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} required /></label>
+                <label>Display name<input value={inviteForm.display_name} onChange={(e) => setInviteForm({ ...inviteForm, display_name: e.target.value })} /></label>
+                <label>Role
+                  <select value={inviteForm.role} onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}>
+                    <option value="viewer">viewer</option>
+                    <option value="operator">operator</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </label>
+              </div>
+              <div className="row-actions" style={{ marginTop: 12 }}>
+                <button className="btn accent" type="submit">Send invite</button>
+              </div>
+            </form>
+          )}
+          {users.length ? (
+            <GroupedList>
+              {users.map((u) => (
+                <GroupedRow
+                  key={u.id}
+                  tone={u.active ? "info" : "stale"}
+                  icon="●"
+                  label={u.display_name || u.email}
+                  description={
+                    inviteReveal[u.id]
+                      ? `${u.email} · invite token: ${inviteReveal[u.id]}`
+                      : `${u.email} · joined ${fmt(u.created_at)}`
+                  }
+                  trailing={
+                    <>
+                      <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={u.id === me?.id}>
+                        <option value="viewer">viewer</option>
+                        <option value="operator">operator</option>
+                        <option value="admin">admin</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="btn small ghost"
+                        disabled={u.id === me?.id}
+                        onClick={() => setActive(u, !u.active)}
+                      >
+                        {u.active ? "Deactivate" : "Reactivate"}
+                      </button>
+                    </>
+                  }
+                />
+              ))}
+            </GroupedList>
+          ) : (
+            <p className="empty">No other users yet.</p>
+          )}
+        </div>
+      )}
 
       <div className="card" style={{ marginBottom: 16 }}>
         <h2 style={{ marginBottom: 12 }}>Incident severity policies</h2>
@@ -235,6 +374,34 @@ export default function Admin() {
             <div className="settings-row"><span className="row-body"><span className="row-description">No connectors yet.</span></span></div>
           )}
         </GroupedList>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2 style={{ marginBottom: 12 }}>Your API keys</h2>
+        <p className="lede" style={{ marginBottom: 12 }}>
+          Long-lived, per-person credentials for scripts and automation — separate from connector tokens, which are shared per-integration.
+        </p>
+        <form className="form-card" onSubmit={createKey} style={{ marginBottom: 16, padding: 0, border: "none", background: "transparent" }}>
+          <div className="row-actions">
+            <input value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="Key name, e.g. CI script" required style={{ flex: 1 }} />
+            <button className="btn accent" type="submit">Create key</button>
+          </div>
+        </form>
+        {apiKeys.length ? (
+          <GroupedList>
+            {apiKeys.map((k) => (
+              <GroupedRow
+                key={k.id}
+                icon="🔑"
+                label={k.name}
+                description={keyReveal[k.id] || `${k.token_hint} · ${k.last_used_at ? `last used ${fmt(k.last_used_at)}` : "never used"}`}
+                trailing={<button type="button" className="btn small ghost" onClick={() => revokeKey(k)}>Revoke</button>}
+              />
+            ))}
+          </GroupedList>
+        ) : (
+          <p className="empty">No API keys yet.</p>
+        )}
       </div>
 
       <div className="card table-wrap">

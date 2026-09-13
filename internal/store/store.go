@@ -104,6 +104,18 @@ type migration struct {
 
 var migrations = []migration{
 	{1, `CREATE INDEX IF NOT EXISTS observations_org_asset_time ON observations(organization_id, asset_id, observed_at)`},
+	{2, `ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1`},
+	{3, `CREATE TABLE IF NOT EXISTS invite_tokens (
+  token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS api_keys (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, user_id TEXT NOT NULL, name TEXT NOT NULL,
+  token_hash TEXT NOT NULL, token_hint TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS api_keys_hash ON api_keys(token_hash);`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
@@ -305,19 +317,74 @@ func (s *Store) CreateUser(ctx context.Context, u *model.User) error {
 	if u.CreatedAt.IsZero() {
 		u.CreatedAt = time.Now().UTC()
 	}
-	_, err := s.exec(ctx, `INSERT INTO users(id,organization_id,email,display_name,role,password_hash,created_at) VALUES(?,?,?,?,?,?,?)`,
-		u.ID, u.OrganizationID, strings.ToLower(u.Email), u.DisplayName, u.Role, u.PasswordHash, u.CreatedAt.Format(time.RFC3339Nano))
+	_, err := s.exec(ctx, `INSERT INTO users(id,organization_id,email,display_name,role,password_hash,active,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		u.ID, u.OrganizationID, strings.ToLower(u.Email), u.DisplayName, u.Role, u.PasswordHash, boolInt(u.Active), u.CreatedAt.Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *Store) UserByEmail(ctx context.Context, email string) (*model.User, error) {
-	row := s.queryRow(ctx, `SELECT id,organization_id,email,display_name,role,password_hash,created_at FROM users WHERE email=?`, strings.ToLower(email))
+	row := s.queryRow(ctx, `SELECT id,organization_id,email,display_name,role,password_hash,active,created_at FROM users WHERE email=?`, strings.ToLower(email))
 	return scanUser(row)
 }
 
 func (s *Store) UserByID(ctx context.Context, id string) (*model.User, error) {
-	row := s.queryRow(ctx, `SELECT id,organization_id,email,display_name,role,password_hash,created_at FROM users WHERE id=?`, id)
+	row := s.queryRow(ctx, `SELECT id,organization_id,email,display_name,role,password_hash,active,created_at FROM users WHERE id=?`, id)
 	return scanUser(row)
+}
+
+func (s *Store) ListUsers(ctx context.Context, orgID string) ([]model.User, error) {
+	rows, err := s.query(ctx, `SELECT id,organization_id,email,display_name,role,password_hash,active,created_at FROM users WHERE organization_id=? ORDER BY created_at`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *u)
+	}
+	if out == nil {
+		out = []model.User{}
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) UpdateUserRole(ctx context.Context, orgID, userID, role string) error {
+	res, err := s.exec(ctx, `UPDATE users SET role=? WHERE id=? AND organization_id=?`, role, userID, orgID)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
+}
+
+func (s *Store) SetUserActive(ctx context.Context, orgID, userID string, active bool) error {
+	res, err := s.exec(ctx, `UPDATE users SET active=? WHERE id=? AND organization_id=?`, boolInt(active), userID, orgID)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
+}
+
+func (s *Store) SetUserPassword(ctx context.Context, userID, passwordHash string) error {
+	res, err := s.exec(ctx, `UPDATE users SET password_hash=? WHERE id=?`, passwordHash, userID)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
+}
+
+func checkAffected(res sql.Result) error {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 type scannable interface {
@@ -327,11 +394,61 @@ type scannable interface {
 func scanUser(row scannable) (*model.User, error) {
 	var u model.User
 	var created string
-	if err := row.Scan(&u.ID, &u.OrganizationID, &u.Email, &u.DisplayName, &u.Role, &u.PasswordHash, &created); err != nil {
+	var active int
+	if err := row.Scan(&u.ID, &u.OrganizationID, &u.Email, &u.DisplayName, &u.Role, &u.PasswordHash, &active, &created); err != nil {
 		return nil, err
 	}
+	u.Active = active != 0
 	u.CreatedAt = parseTime(created)
 	return &u, nil
+}
+
+// CreateInviteToken issues a one-time, expiring token that lets a newly
+// admin-created user set their own password (POST /api/v1/auth/accept-invite).
+func (s *Store) CreateInviteToken(ctx context.Context, userID string, ttl time.Duration) (string, error) {
+	token := idgen.Secret(24)
+	_, err := s.exec(ctx, `INSERT INTO invite_tokens(token,user_id,expires_at) VALUES(?,?,?)`,
+		token, userID, time.Now().UTC().Add(ttl).Format(time.RFC3339Nano))
+	return token, err
+}
+
+// ConsumeInviteToken validates and deletes an invite token in one step, so
+// it can't be replayed. Returns sql.ErrNoRows if the token is unknown or
+// expired.
+func (s *Store) ConsumeInviteToken(ctx context.Context, token string) (string, error) {
+	return consumeToken(ctx, s, "invite_tokens", token)
+}
+
+// CreatePasswordResetToken issues a one-time, expiring token for the
+// self-service "forgot password" flow.
+func (s *Store) CreatePasswordResetToken(ctx context.Context, userID string, ttl time.Duration) (string, error) {
+	token := idgen.Secret(24)
+	_, err := s.exec(ctx, `INSERT INTO password_reset_tokens(token,user_id,expires_at) VALUES(?,?,?)`,
+		token, userID, time.Now().UTC().Add(ttl).Format(time.RFC3339Nano))
+	return token, err
+}
+
+// ConsumePasswordResetToken validates and deletes a password reset token in
+// one step. Returns sql.ErrNoRows if the token is unknown or expired.
+func (s *Store) ConsumePasswordResetToken(ctx context.Context, token string) (string, error) {
+	return consumeToken(ctx, s, "password_reset_tokens", token)
+}
+
+// consumeToken looks up a (token, user_id, expires_at) row in one of the
+// short-lived token tables (invite_tokens, password_reset_tokens), deletes
+// it regardless of outcome so it's never usable twice, and reports
+// sql.ErrNoRows for an unknown or expired token.
+func consumeToken(ctx context.Context, s *Store, table, token string) (string, error) {
+	var userID, exp string
+	err := s.queryRow(ctx, `SELECT user_id, expires_at FROM `+table+` WHERE token=?`, token).Scan(&userID, &exp)
+	if err != nil {
+		return "", err
+	}
+	_, _ = s.exec(ctx, `DELETE FROM `+table+` WHERE token=?`, token)
+	if parseTime(exp).Before(time.Now().UTC()) {
+		return "", sql.ErrNoRows
+	}
+	return userID, nil
 }
 
 func (s *Store) CreateSession(ctx context.Context, userID string, ttl time.Duration) (*model.Session, error) {
@@ -349,7 +466,17 @@ func (s *Store) SessionUser(ctx context.Context, token string) (*model.User, err
 	if parseTime(exp).Before(time.Now().UTC()) {
 		return nil, sql.ErrNoRows
 	}
-	return s.UserByID(ctx, userID)
+	u, err := s.UserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	// Deactivating a user (Admin > Users) must take effect immediately, not
+	// just block their next login — an existing session token would
+	// otherwise keep working until its 12h expiry.
+	if !u.Active {
+		return nil, sql.ErrNoRows
+	}
+	return u, nil
 }
 
 func (s *Store) CountOrgs(ctx context.Context) (int, error) {
@@ -901,6 +1028,77 @@ func (s *Store) ListWorkOrders(ctx context.Context, orgID, status string) ([]mod
 		out = []model.WorkOrder{}
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) CreateAPIKey(ctx context.Context, k *model.APIKey) error {
+	if k.ID == "" {
+		k.ID = idgen.New("key")
+	}
+	if k.CreatedAt.IsZero() {
+		k.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.exec(ctx, `INSERT INTO api_keys(id,organization_id,user_id,name,token_hash,token_hint,created_at) VALUES(?,?,?,?,?,?,?)`,
+		k.ID, k.OrganizationID, k.UserID, k.Name, k.TokenHash, k.TokenHint, k.CreatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) ListAPIKeysForUser(ctx context.Context, userID string) ([]model.APIKey, error) {
+	rows, err := s.query(ctx, `SELECT id,organization_id,user_id,name,token_hint,created_at,last_used_at FROM api_keys WHERE user_id=? ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.APIKey
+	for rows.Next() {
+		var k model.APIKey
+		var created string
+		var lastUsed sql.NullString
+		if err := rows.Scan(&k.ID, &k.OrganizationID, &k.UserID, &k.Name, &k.TokenHint, &created, &lastUsed); err != nil {
+			return nil, err
+		}
+		k.CreatedAt = parseTime(created)
+		if lastUsed.Valid {
+			t := parseTime(lastUsed.String)
+			k.LastUsedAt = &t
+		}
+		out = append(out, k)
+	}
+	if out == nil {
+		out = []model.APIKey{}
+	}
+	return out, rows.Err()
+}
+
+// UserByAPIKeyHash resolves the SHA-256 hash of a raw API key token to the
+// user it belongs to — the same shape as ConnectorByTokenHash, but joined
+// through to an active user rather than a connector.
+func (s *Store) UserByAPIKeyHash(ctx context.Context, hash string) (*model.User, error) {
+	var userID string
+	err := s.queryRow(ctx, `SELECT user_id FROM api_keys WHERE token_hash=?`, hash).Scan(&userID)
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.UserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !u.Active {
+		return nil, sql.ErrNoRows
+	}
+	return u, nil
+}
+
+func (s *Store) TouchAPIKeyHash(ctx context.Context, hash string) error {
+	_, err := s.exec(ctx, `UPDATE api_keys SET last_used_at=? WHERE token_hash=?`, now(), hash)
+	return err
+}
+
+func (s *Store) DeleteAPIKey(ctx context.Context, userID, id string) error {
+	res, err := s.exec(ctx, `DELETE FROM api_keys WHERE id=? AND user_id=?`, id, userID)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
 }
 
 func (s *Store) CreateConnector(ctx context.Context, c *model.Connector) error {
