@@ -3,6 +3,8 @@ sidebar_position: 2
 title: Deploy
 ---
 
+import RelatedArticles from '@site/src/components/RelatedArticles';
+
 # Deploy
 
 Yard ships with Fabric-style scripts: cross-compile locally, install a
@@ -18,8 +20,10 @@ systemd unit on the host, verify `/healthz`.
 ./scripts/ship sus@HOST --port 18080
 ```
 
-Default lab listen port is **18080** (8080 is often occupied). Override with
-`--port` or reuse `.deploy-last`.
+:::tip Default port
+Default lab listen port is **18080** (8080 is often occupied). Override
+with `--port` or reuse `.deploy-last`.
+:::
 
 Demo login after bootstrap:
 
@@ -60,3 +64,11 @@ docker compose --profile postgres up --build
 After deploy, useful console paths: **Assets** (bulk CSV/JSON), **Map**
 (clustering), **Administration** (severity policies). See
 [Console features](./console).
+
+<RelatedArticles
+  items={[
+    {label: 'Console features', to: './console', description: 'Bulk IO, map clustering, runbooks'},
+    {label: 'Quickstart', to: '../getting-started/quickstart', description: 'Run Yard locally in under a minute'},
+    {label: 'Connectors', to: './connectors', description: 'Ingest and Device Agent'},
+  ]}
+/>

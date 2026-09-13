@@ -8,10 +8,10 @@ title: Security
 Report vulnerabilities privately to [security@zyvor.dev](mailto:security@zyvor.dev)
 or open a confidential security advisory on GitHub.
 
-## Demo credentials
-
+:::caution Demo credentials
 Default credentials (`admin@yard.local` / `yard-admin`) are for **local
 evaluation only**. Change them before any shared deployment.
+:::
 
 ## Sessions and RBAC
 

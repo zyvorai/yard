@@ -3,10 +3,14 @@ sidebar_position: 1
 title: Connectors
 ---
 
+import RelatedArticles from '@site/src/components/RelatedArticles';
+
 # Connectors
 
+:::note Optional by design
 Yard treats Zyvor products as optional connectors. The platform installs
 and runs without Device Agent, Nodra, Fleet, or OTA.
+:::
 
 ## Authentication
 
@@ -79,3 +83,11 @@ Full contract notes live in the repo at
 
 For console bulk import, map clustering, and severity runbooks, see
 [Console features](./console).
+
+<RelatedArticles
+  items={[
+    {label: 'Console features', to: './console', description: 'Integrations tab and Device Agent gateway'},
+    {label: 'API', to: '../api', description: 'Ingest and auth reference'},
+    {label: 'Architecture', to: '../core-concepts/architecture', description: 'Data model and boundaries'},
+  ]}
+/>

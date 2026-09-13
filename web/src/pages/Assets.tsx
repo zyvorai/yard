@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, Asset, downloadAuth, EventItem, Site, WorkOrder } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
+import { GroupedList, GroupedRow } from "../components/GroupedList";
 
 type Cap = { id?: string; name: string; kind?: string; unit: string; min?: number; max?: number; writable?: boolean };
 
@@ -326,16 +327,28 @@ export default function Assets() {
                         <button type="button" className="btn small ghost" onClick={() => setCapEdit(false)}>Cancel</button>
                       </div>
                     </form>
-                  ) : (
-                    <>
+                  ) : sel.capabilities.length ? (
+                    <GroupedList>
                       {sel.capabilities.map((c) => (
-                        <div key={c.name} className="pill" style={{ margin: 4 }}>
-                          {c.name} {c.unit}
-                          {(c.min != null || c.max != null) && ` · ${c.min ?? "–"}…${c.max ?? "–"}`}
-                        </div>
+                        <GroupedRow
+                          key={c.name}
+                          tone="info"
+                          icon={c.writable ? "✎" : "◔"}
+                          label={c.name}
+                          description={
+                            c.min != null && c.max != null
+                              ? `${c.unit || "—"} · ${c.min}–${c.max}`
+                              : c.min != null
+                              ? `${c.unit || "—"} · min ${c.min}`
+                              : c.max != null
+                              ? `${c.unit || "—"} · max ${c.max}`
+                              : c.unit || undefined
+                          }
+                        />
                       ))}
-                      {!sel.capabilities.length && <p className="lede">No capabilities yet. Edit to add signals.</p>}
-                    </>
+                    </GroupedList>
+                  ) : (
+                    <p className="lede">No capabilities yet. Edit to add signals.</p>
                   )}
                   {(sel.asset.latitude != null && sel.asset.longitude != null) && (
                     <p className="lede" style={{ marginTop: 8 }}>{sel.asset.latitude.toFixed(5)}, {sel.asset.longitude.toFixed(5)}</p>
@@ -355,27 +368,34 @@ export default function Assets() {
                 </>
               )}
               {tab === "Activity" && (
-                <div>
-                  {(sel.events || []).length ? (sel.events || []).map((e) => (
-                    <p key={e.id} style={{ margin: "8px 0", fontSize: 13 }}>
-                      <strong>{e.title}</strong><br />
-                      <span className="lede">{e.kind} · {e.severity} · {fmt(e.created_at)}</span>
-                    </p>
-                  )) : <p className="lede">No events for this asset yet.</p>}
-                </div>
+                (sel.events || []).length ? (
+                  <GroupedList>
+                    {(sel.events || []).map((e) => (
+                      <GroupedRow
+                        key={e.id}
+                        tone={e.severity === "critical" ? "bad" : e.severity === "warning" ? "warn" : "info"}
+                        icon="●"
+                        label={e.title}
+                        description={`${e.kind} · ${e.severity} · ${fmt(e.created_at)}`}
+                      />
+                    ))}
+                  </GroupedList>
+                ) : <p className="lede">No events for this asset yet.</p>
               )}
               {tab === "Work" && (
-                <div>
-                  {(sel.work_orders || []).length ? (
-                    <table>
-                      <tbody>
-                        {(sel.work_orders || []).map((w) => (
-                          <tr key={w.id}><td>{w.title}</td><td>{w.status}</td><td>{w.priority}</td></tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : <p className="lede">No work orders. Create one from Work orders or Incidents.</p>}
-                </div>
+                (sel.work_orders || []).length ? (
+                  <GroupedList>
+                    {(sel.work_orders || []).map((w) => (
+                      <GroupedRow
+                        key={w.id}
+                        tone={w.status === "done" ? "ok" : "accent"}
+                        icon={w.status === "done" ? "✓" : "▢"}
+                        label={w.title}
+                        description={`${w.status} · ${w.priority} priority`}
+                      />
+                    ))}
+                  </GroupedList>
+                ) : <p className="lede">No work orders. Create one from Work orders or Incidents.</p>
               )}
               {tab === "Integrations" && (
                 <p className="lede">Source of truth is the connector that last published inventory for ref {sel.asset.external_ref || "—"}.</p>

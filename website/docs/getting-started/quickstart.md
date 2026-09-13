@@ -3,6 +3,8 @@ sidebar_position: 1
 title: Quickstart
 ---
 
+import RelatedArticles from '@site/src/components/RelatedArticles';
+
 # Quickstart
 
 Run Yard locally in under a minute. Demo login:
@@ -72,8 +74,12 @@ See [Deploy](../guides/deploy) for details.
 
 ## What's next
 
-- [Architecture](../core-concepts/architecture) — asset model and boundaries
-- [Console features](../guides/console) — bulk IO, map clustering, runbooks
-- [Connectors](../guides/connectors) — ingest and Device Agent
-- [API](../api) — export/import and severity policies
-- Full feature catalog: [docs/ROADMAP.md](https://github.com/zyvorai/yard/blob/master/docs/ROADMAP.md)
+<RelatedArticles
+  items={[
+    {label: 'Architecture', to: '../core-concepts/architecture', description: 'Asset model and boundaries'},
+    {label: 'Console features', to: '../guides/console', description: 'Bulk IO, map clustering, runbooks'},
+    {label: 'Connectors', to: '../guides/connectors', description: 'Ingest and Device Agent'},
+    {label: 'API', to: '../api', description: 'Export/import and severity policies'},
+    {label: 'Full feature catalog', to: 'https://github.com/zyvorai/yard/blob/master/docs/ROADMAP.md', description: 'docs/ROADMAP.md'},
+  ]}
+/>

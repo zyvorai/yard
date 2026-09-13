@@ -49,7 +49,7 @@ Live UI captures from a lab deployment — not mockups. Overview appears above; 
 
 ![Automations — threshold and stale rules](docs/ux/06-automations.png)
 
-Full tour: [Gallery](https://zyvorai.github.io/yard/gallery) · console how-to: [Console features](https://zyvorai.github.io/yard/docs/guides/console)
+Full tour: [Product tour](https://zyvorai.github.io/yard/tour) · console how-to: [Console features](https://zyvorai.github.io/yard/docs/guides/console)
 
 ## What Yard does
 

@@ -3,6 +3,8 @@ sidebar_position: 1
 title: Architecture
 ---
 
+import RelatedArticles from '@site/src/components/RelatedArticles';
+
 # Architecture
 
 Yard is a standalone **asset and operations** platform. The core object is
@@ -20,9 +22,11 @@ Every observation stores **source**, **unit**, **observed_at**,
 **received_at**, and **quality**. Offline data is marked stale rather than
 healthy.
 
-**SeverityPolicy** rows map `capability`, `automation`, or `default`
-matches (ordered by priority) to incident severity and runbook text when
-automations open incidents.
+:::note SeverityPolicy
+Rows map `capability`, `automation`, or `default` matches (ordered by
+priority) to incident severity and runbook text when automations open
+incidents.
+:::
 
 Remote actions require a session, expire, carry an idempotency key, and
 record an outcome. Connectors advertise the actions they can execute.
@@ -60,3 +64,11 @@ the operations surface: health, incidents, and work orders.
 
 - **SQLite** by default (`go run`, CI, Compose)
 - **Postgres** via `YARD_DATABASE_URL` (Compose `--profile postgres`)
+
+<RelatedArticles
+  items={[
+    {label: 'API', to: '../api', description: 'Endpoints for every object in the data model'},
+    {label: 'Console features', to: '../guides/console', description: 'Bulk IO, map clustering, runbooks'},
+    {label: 'Connectors', to: '../guides/connectors', description: 'How optional connectors plug in'},
+  ]}
+/>

@@ -1,65 +1,99 @@
 import type {ReactNode} from 'react';
+import clsx from 'clsx';
+import Link from '@docusaurus/Link';
+import useBaseUrl from '@docusaurus/useBaseUrl';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
-import useBaseUrl from '@docusaurus/useBaseUrl';
-import styles from './gallery.module.css';
+import Reveal from '@site/src/components/Reveal';
+import {FEATURES, type FeatureEntry} from '@site/src/data/features';
+import styles from './tour.module.css';
 
-type Shot = {
-  src: string;
-  caption: string;
-};
-
-const TOUR: Shot[] = [
-  {src: '/00-overview.png', caption: 'Overview'},
-  {src: '/01-assets.png', caption: 'Assets (search, kinds, bulk import/export)'},
-  {src: '/02-sites.png', caption: 'Sites'},
-  {src: '/03-map.png', caption: 'Map (clustered pins)'},
-  {src: '/04-telemetry.png', caption: 'Telemetry'},
-  {src: '/05-work-orders.png', caption: 'Work orders'},
-  {src: '/06-automations.png', caption: 'Automations'},
-];
-
-function ShotCard({shot}: {shot: Shot}) {
-  const src = useBaseUrl(shot.src);
+function TourHeader() {
   return (
-    <figure className={styles.shot}>
-      <img src={src} alt={shot.caption} loading="lazy" />
-      <figcaption>{shot.caption}</figcaption>
-    </figure>
+    <header className={styles.header}>
+      <div className="container text--center">
+        <Heading as="h1" className={styles.title}>
+          Product tour
+        </Heading>
+        <p className={styles.subtitle}>
+          Every screenshot below is captured against a real, running lab
+          deployment — not a mockup.
+        </p>
+      </div>
+    </header>
   );
 }
 
-export default function Gallery(): ReactNode {
-  const hero = useBaseUrl('/00-overview.png');
+function FeatureBlock({feature, index}: {feature: FeatureEntry; index: number}) {
+  const src = useBaseUrl(feature.image);
+  return (
+    <Reveal className={clsx(styles.block, index % 2 === 1 && styles.reverse)}>
+      <div className={styles.blockMedia}>
+        <img src={src} alt={feature.caption} loading="lazy" />
+      </div>
+      <div className={styles.blockText}>
+        <Heading as="h2">{feature.title}</Heading>
+        <p>{feature.description}</p>
+        <p className={styles.blockCaption}>{feature.caption}</p>
+        <Link to={feature.to} className={styles.blockLink}>
+          Learn more →
+        </Link>
+      </div>
+    </Reveal>
+  );
+}
+
+function StatCallout({children}: {children: ReactNode}) {
+  return (
+    <Reveal className={styles.statCallout}>
+      <p>{children}</p>
+    </Reveal>
+  );
+}
+
+function TourCTA() {
+  return (
+    <section className={styles.cta}>
+      <div className="container text--center">
+        <Reveal>
+          <Heading as="h2">See it running in a minute</Heading>
+          <p className={styles.ctaCopy}>
+            Yard&rsquo;s core is Apache-2.0. Clone it, run it, and register
+            your first asset without touching a connector.
+          </p>
+          <div className={styles.ctaButtons}>
+            <Link className="button button--primary button--lg" to="/docs/getting-started/quickstart">
+              Get Started
+            </Link>
+            <Link className="button button--outline button--lg" to="https://github.com/zyvorai/yard">
+              View on GitHub
+            </Link>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+export default function Tour(): ReactNode {
   return (
     <Layout
-      title="Gallery"
+      title="Product tour"
       description="A walkthrough of the Yard console, captured against a live lab deployment.">
-      <header className={styles.header}>
+      <TourHeader />
+      <main>
         <div className="container">
-          <Heading as="h1">Product tour</Heading>
-          <p>
-            Every screenshot below is captured against a real, running lab
-            deployment — not a mockup.
-          </p>
-        </div>
-      </header>
-      <main className="container">
-        <div className={styles.demo}>
-          <img
-            src={hero}
-            alt="Yard Overview — health counters, incidents, and activity"
-          />
-          <p className={styles.caption}>
-            Live lab: Overview health and incidents, clustered MapLibre map,
-            telemetry with freshness, automations, and severity runbooks.
-          </p>
-        </div>
-        <div className={styles.grid}>
-          {TOUR.map((shot) => (
-            <ShotCard key={shot.src} shot={shot} />
+          {FEATURES.map((feature, index) => (
+            <div key={feature.title}>
+              <FeatureBlock feature={feature} index={index} />
+              {index === 1 && (
+                <StatCallout>1 asset model. Every device, vehicle, or sensor fits it.</StatCallout>
+              )}
+              {index === 3 && <StatCallout>4 optional connectors, 0 required.</StatCallout>}
+            </div>
           ))}
         </div>
+        <TourCTA />
       </main>
     </Layout>
   );

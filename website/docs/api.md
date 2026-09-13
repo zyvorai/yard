@@ -3,6 +3,8 @@ sidebar_position: 5
 title: API
 ---
 
+import RelatedArticles from '@site/src/components/RelatedArticles';
+
 # API
 
 Yard exposes a versioned HTTP API under `/api/v1`. The OpenAPI 3.0
@@ -18,8 +20,13 @@ curl -sS -X POST "$YARD_URL/api/v1/auth/login" \
   -d '{"email":"admin@yard.local","password":"yard-admin"}'
 ```
 
-Use `Authorization: Bearer <token>` on subsequent calls. Write mutations
-require role `admin` or `operator`.
+Use `Authorization: Bearer <token>` on subsequent calls.
+
+:::info Write access
+Write mutations (create/update/delete assets, sites, work orders,
+automations, actions, severity policies, asset import) require role
+`admin` or `operator`. Viewers can read but not mutate.
+:::
 
 ## Surfaces
 
@@ -72,3 +79,11 @@ curl -sS -H "Authorization: Bearer $TOKEN" \
 
 See [Console features](./guides/console) for the Admin UI and Map
 clustering behavior.
+
+<RelatedArticles
+  items={[
+    {label: 'Console features', to: './guides/console', description: 'Admin UI for bulk IO and severity policies'},
+    {label: 'Connectors', to: './guides/connectors', description: 'Ingest auth and Device Agent gateway'},
+    {label: 'Architecture', to: './core-concepts/architecture', description: 'Data model and boundaries'},
+  ]}
+/>

@@ -3,6 +3,8 @@ sidebar_position: 3
 title: Console features
 ---
 
+import RelatedArticles from '@site/src/components/RelatedArticles';
+
 # Console features
 
 Day-to-day surfaces beyond the [quickstart](../getting-started/quickstart)
@@ -50,8 +52,10 @@ heartbeat checklist. The Incidents detail panel shows the attached
 Edit policies under **Administration → Incident severity policies**
 (`GET/POST /api/v1/severity-policies`, `PATCH/DELETE …/{id}`).
 
-## Related
-
-- [API](../api) — curl examples for export/import and policies
-- [Architecture](../core-concepts/architecture) — data model
-- Full catalog: [ROADMAP.md](https://github.com/zyvorai/yard/blob/master/docs/ROADMAP.md)
+<RelatedArticles
+  items={[
+    {label: 'API', to: '../api', description: 'Curl examples for export/import and policies'},
+    {label: 'Architecture', to: '../core-concepts/architecture', description: 'Data model'},
+    {label: 'Full feature catalog', to: 'https://github.com/zyvorai/yard/blob/master/docs/ROADMAP.md', description: 'docs/ROADMAP.md'},
+  ]}
+/>

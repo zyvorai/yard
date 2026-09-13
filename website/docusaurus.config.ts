@@ -50,6 +50,18 @@ const config: Config = {
     ],
   ],
 
+  // Offline local search index — no external account needed, unlike
+  // Algolia, which fits an OSS project better.
+  themes: [
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        hashed: true,
+        indexPages: true,
+      },
+    ],
+  ],
+
   themeConfig: {
     image: 'yard-share-card.png',
     colorMode: {
@@ -69,6 +81,11 @@ const config: Config = {
           label: 'Docs',
         },
         {
+          to: '/tour',
+          position: 'left',
+          label: 'Tour',
+        },
+        {
           href: 'https://github.com/zyvorai/yard',
           label: 'GitHub',
           position: 'right',
@@ -86,6 +103,7 @@ const config: Config = {
         {
           title: 'Docs',
           items: [
+            {label: 'Product tour', to: '/tour'},
             {label: 'Quickstart', to: '/docs/getting-started/quickstart'},
             {label: 'Architecture', to: '/docs/core-concepts/architecture'},
             {label: 'Connectors', to: '/docs/guides/connectors'},
