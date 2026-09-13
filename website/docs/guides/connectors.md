@@ -55,6 +55,19 @@ limited.
 
 `POST /api/v1/ingest/events` records an operational event.
 
+### Live position updates
+
+There is no separate "location" endpoint — a moving asset (a vehicle, a
+mobile gateway) reports live position through the same `inventory` call
+above. POST an updated `latitude`/`longitude` for the asset's
+`external_ref` every 10-30 seconds and Yard treats it as the asset's
+current position; the Map page picks it up automatically over the
+existing `/api/v1/stream` SSE connection, no polling required. Omitting
+`latitude`/`longitude` on a later inventory update (for example, one that
+only refreshes capabilities) leaves the asset's last known position
+untouched rather than clearing it, so a connector can send partial
+updates freely.
+
 ## Device Agent gateway
 
 ```bash

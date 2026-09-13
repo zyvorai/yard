@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, Asset, downloadAuth, EventItem, Site, WorkOrder } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
 import { GroupedList, GroupedRow } from "../components/GroupedList";
+import LocationPicker from "../components/LocationPicker";
 
 type Cap = { id?: string; name: string; kind?: string; unit: string; min?: number; max?: number; writable?: boolean };
 
@@ -31,6 +32,7 @@ export default function Assets() {
     name: "", kind: "equipment", custom_kind: "", external_ref: "", manufacturer: "", model: "", serial: "",
     site_id: "", latitude: "", longitude: "", stale_after_sec: "90",
   });
+  const [pickOpen, setPickOpen] = useState(false);
   const [capEdit, setCapEdit] = useState(false);
   const [capRows, setCapRows] = useState<Cap[]>([]);
   const [params] = useSearchParams();
@@ -70,6 +72,7 @@ export default function Assets() {
     });
     setFormOpen(true);
     setEditing(false);
+    setPickOpen(false);
     setErr("");
   }
 
@@ -92,11 +95,27 @@ export default function Assets() {
     });
     setEditing(true);
     setFormOpen(true);
+    setPickOpen(false);
     setErr("");
   }
 
   function resolvedKind() {
     return form.kind === CUSTOM ? form.custom_kind.trim() || "equipment" : form.kind;
+  }
+
+  function locateMe() {
+    if (!navigator.geolocation) {
+      setErr("Geolocation is not supported by this browser.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm((f) => ({ ...f, latitude: String(pos.coords.latitude), longitude: String(pos.coords.longitude) }));
+        setErr("");
+      },
+      (geoErr) => setErr(`Location unavailable: ${geoErr.message}`),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   }
 
   async function save(e: FormEvent) {
@@ -252,6 +271,21 @@ export default function Assets() {
             <label>Stale after (sec)<input type="number" value={form.stale_after_sec} onChange={(e) => setForm({ ...form, stale_after_sec: e.target.value })} /></label>
             <label>Latitude<input type="number" step="any" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })} /></label>
             <label>Longitude<input type="number" step="any" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} /></label>
+            <div className="location-toggle-row" style={{ gridColumn: "1 / -1" }}>
+              <button type="button" className="btn small ghost" onClick={locateMe}>Use my location</button>
+              <button type="button" className="btn small ghost" onClick={() => setPickOpen((v) => !v)}>
+                {pickOpen ? "Hide map" : "Pick on map"}
+              </button>
+            </div>
+            {pickOpen && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <LocationPicker
+                  latitude={form.latitude ? Number(form.latitude) : undefined}
+                  longitude={form.longitude ? Number(form.longitude) : undefined}
+                  onChange={(lat, lng) => setForm((f) => ({ ...f, latitude: String(lat), longitude: String(lng) }))}
+                />
+              </div>
+            )}
           </div>
           {err && <p className="form-error">{err}</p>}
           <div className="row-actions" style={{ marginTop: 12 }}>

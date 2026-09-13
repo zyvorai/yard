@@ -211,3 +211,105 @@ func TestAssetExportImportAndSeverityPolicies(t *testing.T) {
 		t.Fatal("expected seeded severity policies")
 	}
 }
+
+func TestValidLatLng(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	cases := []struct {
+		name     string
+		lat, lng *float64
+		want     bool
+	}{
+		{"nil both", nil, nil, true},
+		{"in range", f(19.87), f(75.34), true},
+		{"lat too high", f(90.1), nil, false},
+		{"lat too low", f(-90.1), nil, false},
+		{"lng too high", nil, f(180.1), false},
+		{"lng too low", nil, f(-180.1), false},
+		{"boundary valid positive", f(90), f(180), true},
+		{"boundary valid negative", f(-90), f(-180), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := validLatLng(c.lat, c.lng); got != c.want {
+				t.Fatalf("validLatLng(%v,%v) = %v, want %v", c.lat, c.lng, got, c.want)
+			}
+		})
+	}
+}
+
+func TestIngestInventoryPreservesLocationOnPartialUpdate(t *testing.T) {
+	st, err := store.Open("file:api-inventory-loc?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	res, err := seed.Bootstrap(context.Background(), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(New(st, nil).Handler())
+	defer ts.Close()
+
+	post := func(body string) *http.Response {
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/ingest/inventory", bytes.NewReader([]byte(body)))
+		req.Header.Set("Authorization", "Bearer "+res.IngestToken)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	first := post(`{"external_ref":"LOC-TEST-1","name":"Loc Test","kind":"device","latitude":19.87,"longitude":75.34}`)
+	defer first.Body.Close()
+	if first.StatusCode != 202 {
+		b, _ := io.ReadAll(first.Body)
+		t.Fatalf("first ingest %d %s", first.StatusCode, b)
+	}
+
+	second := post(`{"external_ref":"LOC-TEST-1","name":"Loc Test","kind":"device","capabilities":["cpu_temp"]}`)
+	defer second.Body.Close()
+	if second.StatusCode != 202 {
+		b, _ := io.ReadAll(second.Body)
+		t.Fatalf("second ingest %d %s", second.StatusCode, b)
+	}
+	var a struct {
+		Latitude  *float64 `json:"latitude"`
+		Longitude *float64 `json:"longitude"`
+	}
+	if err := json.NewDecoder(second.Body).Decode(&a); err != nil {
+		t.Fatal(err)
+	}
+	if a.Latitude == nil || a.Longitude == nil {
+		t.Fatal("expected location to be preserved after a partial update omitting lat/lng")
+	}
+	if *a.Latitude != 19.87 || *a.Longitude != 75.34 {
+		t.Fatalf("expected preserved coords 19.87,75.34, got %v,%v", *a.Latitude, *a.Longitude)
+	}
+}
+
+func TestIngestInventoryRejectsOutOfRangeLatLng(t *testing.T) {
+	st, err := store.Open("file:api-inventory-badloc?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	res, err := seed.Bootstrap(context.Background(), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(New(st, nil).Handler())
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/ingest/inventory", bytes.NewReader([]byte(`{"external_ref":"BAD-LOC-1","latitude":999,"longitude":75.34}`)))
+	req.Header.Set("Authorization", "Bearer "+res.IngestToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}

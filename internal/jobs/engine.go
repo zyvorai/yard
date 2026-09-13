@@ -310,6 +310,8 @@ func (e *Engine) IngestInventory(ctx context.Context, orgID string, in model.Ing
 		a.ID = existing.ID
 		a.CreatedAt = existing.CreatedAt
 		a.Health = existing.Health
+		a.Latitude = existing.Latitude
+		a.Longitude = existing.Longitude
 	}
 	if in.Latitude != nil {
 		a.Latitude = in.Latitude

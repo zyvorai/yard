@@ -74,11 +74,21 @@ export default function YardMap({ pins, selectedId, onSelect }: Props) {
     );
   }, [pins]);
 
+  const pinIdsKey = useMemo(() => pins.map((p) => p.id).sort().join(","), [pins]);
+  const prevPinIdsKey = useRef<string | null>(null);
+
   useEffect(() => {
-    userMoved.current = false;
+    const changed = prevPinIdsKey.current !== pinIdsKey;
+    prevPinIdsKey.current = pinIdsKey;
+    if (!changed || userMoved.current) return;
     const t = window.setTimeout(() => fitPins(true), 120);
     return () => window.clearTimeout(t);
-  }, [pins, fitPins]);
+  }, [pinIdsKey, fitPins]);
+
+  const recenter = useCallback(() => {
+    userMoved.current = false;
+    fitPins(true);
+  }, [fitPins]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -113,6 +123,7 @@ export default function YardMap({ pins, selectedId, onSelect }: Props) {
 
   return (
     <div className="map-canvas">
+      <button type="button" className="map-recenter" onClick={recenter}>Recenter</button>
       <Map
         ref={mapRef}
         initialViewState={initialView}

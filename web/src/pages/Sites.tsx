@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { api, Site } from "../lib/api";
+import LocationPicker from "../components/LocationPicker";
 
 const KINDS = ["factory", "warehouse", "office", "customer", "site"];
 
@@ -11,6 +12,7 @@ export default function Sites() {
   const [editId, setEditId] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [form, setForm] = useState(empty);
+  const [pickOpen, setPickOpen] = useState(false);
 
   async function load() {
     setRows(await api<Site[]>("/api/v1/sites"));
@@ -27,7 +29,23 @@ export default function Sites() {
       longitude: s.longitude != null ? String(s.longitude) : "",
     });
     setOpen(true);
+    setPickOpen(false);
     setErr("");
+  }
+
+  function locateMe() {
+    if (!navigator.geolocation) {
+      setErr("Geolocation is not supported by this browser.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm((f) => ({ ...f, latitude: String(pos.coords.latitude), longitude: String(pos.coords.longitude) }));
+        setErr("");
+      },
+      (geoErr) => setErr(`Location unavailable: ${geoErr.message}`),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   }
 
   async function save(e: FormEvent) {
@@ -73,7 +91,7 @@ export default function Sites() {
           <h1>Sites</h1>
           <p className="lede">Factories, warehouses, offices, and customer locations.</p>
         </div>
-        <button className="btn accent" type="button" onClick={() => { setOpen((v) => !v); setEditId(null); setForm(empty); setErr(""); }}>
+        <button className="btn accent" type="button" onClick={() => { setOpen((v) => !v); setEditId(null); setForm(empty); setPickOpen(false); setErr(""); }}>
           {open && !editId ? "Cancel" : "Add site"}
         </button>
       </div>
@@ -90,11 +108,26 @@ export default function Sites() {
             <label className="span-2">Address<input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
             <label>Latitude<input type="number" step="any" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })} /></label>
             <label>Longitude<input type="number" step="any" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} /></label>
+            <div className="location-toggle-row" style={{ gridColumn: "1 / -1" }}>
+              <button type="button" className="btn small ghost" onClick={locateMe}>Use my location</button>
+              <button type="button" className="btn small ghost" onClick={() => setPickOpen((v) => !v)}>
+                {pickOpen ? "Hide map" : "Pick on map"}
+              </button>
+            </div>
+            {pickOpen && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <LocationPicker
+                  latitude={form.latitude ? Number(form.latitude) : undefined}
+                  longitude={form.longitude ? Number(form.longitude) : undefined}
+                  onChange={(lat, lng) => setForm((f) => ({ ...f, latitude: String(lat), longitude: String(lng) }))}
+                />
+              </div>
+            )}
           </div>
           {err && <p className="form-error">{err}</p>}
           <div className="row-actions" style={{ marginTop: 12 }}>
             <button className="btn accent" type="submit">{editId ? "Save" : "Create site"}</button>
-            {editId && <button className="btn ghost" type="button" onClick={() => { setOpen(false); setEditId(null); }}>Cancel</button>}
+            {editId && <button className="btn ghost" type="button" onClick={() => { setOpen(false); setEditId(null); setPickOpen(false); }}>Cancel</button>}
           </div>
         </form>
       )}

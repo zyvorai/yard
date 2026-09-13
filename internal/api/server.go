@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -82,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/audit", s.withUser(s.audit))
 	mux.HandleFunc("/api/v1/stream", s.withUser(s.stream))
 	mux.HandleFunc("/api/v1/onboarding", s.withUser(s.onboarding))
+	mux.HandleFunc("/api/v1/geocode", s.withUser(s.geocode))
 	mux.HandleFunc("/api/v1/ingest/observations", s.rateIngest(s.withConnector(s.ingestObs)))
 	mux.HandleFunc("/api/v1/ingest/inventory", s.rateIngest(s.withConnector(s.ingestInv)))
 	mux.HandleFunc("/api/v1/ingest/events", s.rateIngest(s.withConnector(s.ingestEvt)))
@@ -251,6 +253,10 @@ func (s *Server) sites(w http.ResponseWriter, r *http.Request, u *model.User) {
 			writeJSON(w, 400, map[string]string{"error": "name required"})
 			return
 		}
+		if !validLatLng(site.Latitude, site.Longitude) {
+			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+			return
+		}
 		if err := s.Store.UpsertSite(r.Context(), &site); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
@@ -305,6 +311,10 @@ func (s *Server) siteItem(w http.ResponseWriter, r *http.Request, u *model.User)
 		if in.Longitude != nil {
 			site.Longitude = in.Longitude
 		}
+		if !validLatLng(site.Latitude, site.Longitude) {
+			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+			return
+		}
 		if err := s.Store.UpdateSite(r.Context(), site); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
@@ -348,6 +358,10 @@ func (s *Server) assets(w http.ResponseWriter, r *http.Request, u *model.User) {
 		a.OrganizationID = u.OrganizationID
 		if a.Kind == "" {
 			a.Kind = "equipment"
+		}
+		if !validLatLng(a.Latitude, a.Longitude) {
+			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+			return
 		}
 		if err := s.Store.UpsertAsset(r.Context(), &a); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -434,6 +448,10 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		}
 		if in.Metadata != "" {
 			a.Metadata = in.Metadata
+		}
+		if !validLatLng(a.Latitude, a.Longitude) {
+			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+			return
 		}
 		if err := s.Store.UpsertAsset(r.Context(), a); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -613,10 +631,10 @@ func (s *Server) assetsImport(w http.ResponseWriter, r *http.Request, u *model.U
 			if site := col(row, "site_id"); site != "" {
 				a.SiteID = &site
 			}
-			if lat := parseFloatPtr(col(row, "latitude")); lat != nil {
+			if lat := parseFloatPtr(col(row, "latitude")); lat != nil && validLatLng(lat, nil) {
 				a.Latitude = lat
 			}
-			if lng := parseFloatPtr(col(row, "longitude")); lng != nil {
+			if lng := parseFloatPtr(col(row, "longitude")); lng != nil && validLatLng(nil, lng) {
 				a.Longitude = lng
 			}
 			if a.Name == "" && a.ExternalRef == "" {
@@ -673,6 +691,16 @@ func parseFloatPtr(s string) *float64 {
 		return nil
 	}
 	return &v
+}
+
+func validLatLng(lat, lng *float64) bool {
+	if lat != nil && (*lat < -90 || *lat > 90) {
+		return false
+	}
+	if lng != nil && (*lng < -180 || *lng > 180) {
+		return false
+	}
+	return true
 }
 
 func atoiDefault(s string, d int) int {
@@ -1311,6 +1339,63 @@ func (s *Server) onboarding(w http.ResponseWriter, r *http.Request, u *model.Use
 	writeJSON(w, 200, map[string]any{"steps": steps, "completed": doneN, "total": len(steps)})
 }
 
+type nominatimResult struct {
+	DisplayName string `json:"display_name"`
+	Lat         string `json:"lat"`
+	Lon         string `json:"lon"`
+}
+
+type geocodeResult struct {
+	DisplayName string  `json:"display_name"`
+	Lat         float64 `json:"lat"`
+	Lon         float64 `json:"lon"`
+}
+
+func (s *Server) geocode(w http.ResponseWriter, r *http.Request, u *model.User) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeJSON(w, 400, map[string]string{"error": "q required"})
+		return
+	}
+	if !s.limiter.allow("geocode") {
+		writeJSON(w, 429, map[string]string{"error": "geocode rate limit"})
+		return
+	}
+	upstream := "https://nominatim.openstreetmap.org/search?format=json&limit=5&q=" + url.QueryEscape(q)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstream, nil)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": "geocode upstream failed"})
+		return
+	}
+	req.Header.Set("User-Agent", "Yard/1.0 (https://github.com/zyvorai/yard)")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": "geocode upstream failed"})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		writeJSON(w, 502, map[string]string{"error": "geocode upstream failed"})
+		return
+	}
+	var raw []nominatimResult
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		writeJSON(w, 502, map[string]string{"error": "geocode upstream failed"})
+		return
+	}
+	results := make([]geocodeResult, 0, len(raw))
+	for _, item := range raw {
+		lat, errLat := strconv.ParseFloat(item.Lat, 64)
+		lon, errLon := strconv.ParseFloat(item.Lon, 64)
+		if errLat != nil || errLon != nil {
+			continue
+		}
+		results = append(results, geocodeResult{DisplayName: item.DisplayName, Lat: lat, Lon: lon})
+	}
+	writeJSON(w, 200, map[string]any{"results": results})
+}
+
 func (s *Server) ingestObs(w http.ResponseWriter, r *http.Request, c *model.Connector) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, 405, map[string]string{"error": "method"})
@@ -1362,6 +1447,10 @@ func (s *Server) ingestInv(w http.ResponseWriter, r *http.Request, c *model.Conn
 	var in model.IngestInventory
 	if err := readJSON(r, &in); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	if !validLatLng(in.Latitude, in.Longitude) {
+		writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
 		return
 	}
 	a, err := s.Engine.IngestInventory(r.Context(), c.OrganizationID, in, c.Kind)
