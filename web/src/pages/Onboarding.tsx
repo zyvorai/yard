@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { GroupedList, GroupedRow } from "../components/GroupedList";
+import { useDialogA11y } from "../lib/useDialogA11y";
 
 type Step = { id: string; title: string; body: string; done?: boolean; href?: string };
 
@@ -22,14 +23,16 @@ function CloseIcon() {
 }
 
 function StepPanel({ step, index, onClose }: { step: Step; index: number; onClose: () => void }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(cardRef, true, onClose);
   return (
-    <div className="step-overlay" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="step-card" onClick={(e) => e.stopPropagation()}>
+    <div className="step-overlay" role="presentation" onClick={onClose}>
+      <div ref={cardRef} className="step-card" role="dialog" aria-modal="true" aria-labelledby="step-panel-title" tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <button type="button" className="icon-btn step-card-close" aria-label="Close" onClick={onClose}>
           <CloseIcon />
         </button>
         <div className="step-icon">{index + 1}</div>
-        <h2>{step.title}</h2>
+        <h2 id="step-panel-title">{step.title}</h2>
         <p>{step.body}</p>
         <div className="step-actions">
           {step.href ? (

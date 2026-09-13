@@ -192,7 +192,7 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Map full-bleed glass UI | Have |
 | Asset Activity / Work / Integrations tabs filled | Have (Activity / Work) |
 | Empty states + first-run guided demo | Have |
-| Accessibility audit (WCAG) | Next (focus-visible rings fixed; full audit pending) |
+| Accessibility audit (WCAG) | Have (focus-visible rings, skip-to-content link, dialog focus trap + Escape via shared `useDialogA11y` hook) / Later (formal third-party audit) |
 | Responsive / tablet field layout | Have (bottom nav) |
 | i18n | Later |
 | Printable WO / incident reports | Later |

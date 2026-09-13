@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, Asset, Site } from "../lib/api";
+import { useDialogA11y } from "../lib/useDialogA11y";
 
 type Item = { id: string; label: string; hint: string; to: string };
 
@@ -27,7 +28,10 @@ export default function CommandPalette() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const paletteRef = useRef<HTMLDivElement>(null);
   const nav = useNavigate();
+  const close = useCallback(() => setOpen(false), []);
+  useDialogA11y(paletteRef, open, close);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -35,7 +39,6 @@ export default function CommandPalette() {
         e.preventDefault();
         setOpen((v) => !v);
       }
-      if (e.key === "Escape") setOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -47,7 +50,6 @@ export default function CommandPalette() {
       setSel(0);
       return;
     }
-    inputRef.current?.focus();
     Promise.all([api<Asset[]>("/api/v1/assets"), api<Site[]>("/api/v1/sites")])
       .then(([a, s]) => { setAssets(a); setSites(s); })
       .catch(() => {});
@@ -80,8 +82,10 @@ export default function CommandPalette() {
   return (
     <div className="palette-backdrop" onClick={() => setOpen(false)} role="presentation">
       <div
+        ref={paletteRef}
         className="palette"
         role="dialog"
+        aria-modal="true"
         aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {

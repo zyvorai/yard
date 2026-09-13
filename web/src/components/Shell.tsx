@@ -83,6 +83,7 @@ export default function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="app">
+      <a href="#main-content" className="skip-link">Skip to content</a>
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">
@@ -113,7 +114,7 @@ export default function Shell({ children }: { children: ReactNode }) {
           <p className="lede" style={{ marginTop: 6, fontSize: 11 }}>⌘K command palette</p>
         </div>
       </aside>
-      <main className={mapMode ? "main main--map" : "main"}>{children}</main>
+      <main id="main-content" tabIndex={-1} className={mapMode ? "main main--map" : "main"}>{children}</main>
       <button
         type="button"
         className="global-signout"
