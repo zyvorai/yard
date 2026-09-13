@@ -1,0 +1,117 @@
+.header {
+  padding: clamp(3rem, 8vw, 6rem) 0 clamp(2rem, 5vw, 3rem);
+}
+
+.title {
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  letter-spacing: -0.03em;
+  margin-bottom: 1rem;
+}
+
+.subtitle {
+  max-width: 34rem;
+  margin: 0 auto;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 1.1rem;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 16px;
+  margin-bottom: 2rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+.table thead th {
+  text-align: center;
+  padding: 1.5rem 1.25rem 1rem;
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+  background: var(--ifm-background-surface-color);
+}
+
+.table thead th:first-child {
+  background: transparent;
+  border-bottom: none;
+}
+
+.planName {
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.planTag {
+  font-size: 0.8rem;
+  color: var(--ifm-color-emphasis-600);
+  font-weight: 500;
+  margin-top: 0.25rem;
+}
+
+.table tbody tr {
+  border-bottom: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.table td {
+  padding: 0.9rem 1.25rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.rowLabel {
+  text-align: left;
+  font-size: 0.9rem;
+  color: var(--ifm-font-color-base);
+}
+
+.check {
+  color: var(--ifm-color-primary);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.dash {
+  color: var(--ifm-color-emphasis-400);
+}
+
+.cellText {
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-700);
+  font-weight: 600;
+}
+
+.note {
+  max-width: 40rem;
+  margin: 0 auto 3rem;
+  text-align: center;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.9rem;
+}
+
+.cta {
+  background: #000;
+  color: #f5f5f7;
+  padding: var(--zv-section-space) 0;
+}
+
+.ctaCopy {
+  max-width: 32rem;
+  margin: 0 auto 2rem;
+  color: #a1a1a6;
+}
+
+.ctaButtons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
