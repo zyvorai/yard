@@ -93,9 +93,9 @@ flowchart TD
 | Stale marking + missed-heartbeat incidents | Have |
 | Background stale ticker | Have |
 | Telemetry latest table | Have |
-| Historical charts / sparklines / time-range query | Have (sparklines) / Next (time-range) |
-| Multi-signal dashboards per asset | Next |
-| Capability min/max enforcement + soft/hard alarms | Next |
+| Historical charts / sparklines / time-range query | Have |
+| Multi-signal dashboards per asset | Have |
+| Capability min/max enforcement + soft/hard alarms | Have (`capability_min`/`capability_max` automation triggers) |
 | Metric retention / downsampling | Later |
 | Anomaly detection | Later |
 | Export telemetry (CSV, Prometheus, OTLP) | Later |
@@ -127,7 +127,7 @@ flowchart TD
 | Stale heartbeat → open incident | Have |
 | Notify-on-event automation | Have (notify + audit) |
 | Automation rule editor | Have (create / enable / delete) |
-| Webhook / email / Slack / PagerDuty actions | Have (webhook) / Next (email/Slack/PD) |
+| Webhook / email / Slack / PagerDuty actions | Have (email/Slack/PagerDuty implemented, unverified — no test account) |
 | Remote actions with idempotency + expiry | Have (API + UI history + sweeper) |
 | Device Agent `inventory.refresh` / `diagnostics.read` | Have |
 | Two-person action approval | Later |
@@ -174,9 +174,9 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Audit log + Admin token rotate | Have |
 | Severity policy editor (Admin) | Have |
 | Org-scoped queries / isolation tests | Have |
-| Roles / RBAC (viewer, operator, admin) | Have (write gate) / Next (invite UX) |
-| Invite users / password reset | Next |
-| API keys for humans vs connectors | Next |
+| Roles / RBAC (viewer, operator, admin) | Have (write gate + invite UX) |
+| Invite users / password reset | Have |
+| API keys for humans vs connectors | Have |
 | SSO (OIDC/SAML) | Later |
 | Multi-tenant product UX | Later |
 | Soft-delete + retention | Later |
@@ -192,7 +192,7 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Map full-bleed glass UI | Have |
 | Asset Activity / Work / Integrations tabs filled | Have (Activity / Work) |
 | Empty states + first-run guided demo | Have |
-| Accessibility audit (WCAG) | Next |
+| Accessibility audit (WCAG) | Next (focus-visible rings fixed; full audit pending) |
 | Responsive / tablet field layout | Have (bottom nav) |
 | i18n | Later |
 | Printable WO / incident reports | Later |
@@ -205,10 +205,10 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | SQLite local / CI | Have |
 | Postgres DSN path | Have |
 | Docker Compose + ship scripts | Have |
-| Backups / restore tooling | Next |
-| Metrics (`/metrics`) + structured logging | Have (`/metrics`) / Next (structured logs) |
+| Backups / restore tooling | Have (`scripts/backup.sh`/`restore.sh`, SQLite + Postgres) |
+| Metrics (`/metrics`) + structured logging | Have |
 | Rate limits on ingest | Have |
-| Migration versioning | Next |
+| Migration versioning | Have (`schema_migrations` + versioned migration runner) |
 | PostGIS for map queries | Later |
 | Horizontal replicas + shared Postgres | Later |
 | Helm / k8s deploy | Later |

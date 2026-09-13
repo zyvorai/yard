@@ -159,6 +159,8 @@ docs/ux/               live lab screenshots
 docs/social/           share / OG card
 openapi.yaml           OpenAPI 3.0
 scripts/ship           remote lab deploy (Fabric-style)
+scripts/backup.sh      SQLite/Postgres backup
+scripts/restore.sh     restore a scripts/backup.sh snapshot
 ```
 
 ## Prerequisites
@@ -221,6 +223,15 @@ Open `http://HOST:18080` (default lab port; override with `--port`). Demo login 
 
 ```bash
 YARD_URL=http://HOST:18080 ./scripts/verify-remote.sh
+```
+
+### Backups
+
+Works against either backend, auto-detected from `YARD_DATABASE_URL` (SQLite via `sqlite3 ... VACUUM INTO`, a live consistent snapshot; Postgres via `pg_dump`/`pg_restore`):
+
+```bash
+./scripts/backup.sh                    # snapshot to backups/yard-<timestamp>.db|.dump
+./scripts/restore.sh backups/yard-....db   # restores; saves the current file as *.before-restore first
 ```
 
 ### Device Agent gateway

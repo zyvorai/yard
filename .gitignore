@@ -29,6 +29,7 @@ Thumbs.db
 
 # Data (top-level runtime dir only — not src/data/ folders like website/src/data/)
 /data/
+/backups/
 .deploy-last
 *.sqlite
 *.sqlite-shm

@@ -1,4 +1,4 @@
-.PHONY: test build web run sim tidy ship
+.PHONY: test build web run sim tidy ship backup restore
 
 YARD_LISTEN ?= :8080
 YARD_DATABASE_URL ?= file:data/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)
@@ -31,3 +31,10 @@ sim:
 # make ship HOST=sus@1.2.3.4 ARGS='--with-sim'
 ship:
 	./scripts/ship $(HOST) $(ARGS)
+
+backup:
+	./scripts/backup.sh $(ARGS)
+
+# make restore FILE=backups/yard-20260101T000000Z.db
+restore:
+	./scripts/restore.sh $(FILE) $(ARGS)
