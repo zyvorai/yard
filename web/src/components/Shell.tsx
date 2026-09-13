@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { clearToken } from "../lib/api";
-import { useTheme } from "../lib/theme";
 
 const items = [
   ["/", "Overview"],
@@ -15,22 +14,59 @@ const items = [
   ["/integrations", "Integrations"],
   ["/admin", "Administration"],
   ["/diagnostics", "Diagnostics"],
+  ["/settings", "Settings"],
 ];
+
+function SignOutIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M16 8l4 4-4 4M9 12h11"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
 
 export default function Shell({ children }: { children: ReactNode }) {
   const loc = useLocation();
-  const { theme, setTheme } = useTheme();
   const mapMode = loc.pathname === "/map";
+
+  function signOut() {
+    clearToken();
+    window.location.href = "/login";
+  }
 
   return (
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/logo.svg" width={32} height={32} alt="Zyvor" />
-          <div>
-            <div className="name">Yard</div>
-            <div className="sub">zyvor.dev</div>
+          <div className="brand-mark">
+            <img src="/logo.svg" width={32} height={32} alt="Zyvor" />
+            <div>
+              <div className="name">Yard</div>
+              <div className="sub">zyvor.dev</div>
+            </div>
           </div>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Sign out"
+            title="Sign out"
+            onClick={signOut}
+          >
+            <SignOutIcon />
+          </button>
         </div>
         <nav className="nav">
           {items.slice(0, 7).map(([to, label]) => (
@@ -47,17 +83,6 @@ export default function Shell({ children }: { children: ReactNode }) {
         </nav>
         <div className="foot">
           <div>Northwind Operations</div>
-          <div className="theme-toggle" role="group" aria-label="Theme">
-            <button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}>
-              Light
-            </button>
-            <button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}>
-              Dark
-            </button>
-          </div>
-          <button className="btn ghost small" style={{ marginTop: 4, width: "100%" }} onClick={() => { clearToken(); window.location.href = "/login"; }}>
-            Sign out
-          </button>
         </div>
       </aside>
       <main className={mapMode ? "main main--map" : "main"}>{children}</main>

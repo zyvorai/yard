@@ -102,10 +102,35 @@ a { color: inherit; text-decoration: none; }
   height: 100vh;
   z-index: 20;
 }
-.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; }
-.brand img { width: 32px; height: 32px; }
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 18px 8px;
+}
+.brand-mark { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand img { width: 32px; height: 32px; flex-shrink: 0; }
 .brand .name { font-weight: 650; font-size: 17px; }
 .brand .sub { color: var(--muted); font-size: 11px; font-weight: 500; }
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-btn:hover, .icon-btn:focus-visible {
+  background: var(--nav-hover);
+  color: var(--ink);
+  outline: none;
+}
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav a {
   display: flex; align-items: center; gap: 10px;

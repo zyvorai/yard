@@ -13,6 +13,7 @@ import Automations from "./pages/Automations";
 import Integrations from "./pages/Integrations";
 import Admin from "./pages/Admin";
 import Diagnostics from "./pages/Diagnostics";
+import Settings from "./pages/Settings";
 
 function Guard({ children }: { children: JSX.Element }) {
   if (!getToken()) return <Navigate to="/login" replace />;
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/integrations" element={<Integrations />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/diagnostics" element={<Diagnostics />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Shell>
