@@ -61,9 +61,29 @@ docker compose up --build
 docker compose --profile postgres up --build
 ```
 
+## Backups
+
+Auto-detects SQLite vs. Postgres from `YARD_DATABASE_URL`:
+
+```bash
+./scripts/backup.sh                        # snapshot to backups/yard-<timestamp>.db|.dump
+./scripts/restore.sh backups/yard-....db   # saves the current file as *.before-restore first
+```
+
+SQLite uses `sqlite3 ... VACUUM INTO` — a live, consistent snapshot that
+doesn't lock out the running server. Postgres uses `pg_dump -Fc` /
+`pg_restore --clean --if-exists`. Every backup run writes a new
+timestamped file; nothing is ever overwritten.
+
+## Logging
+
+Every request is logged as one structured line (method, path, status,
+duration). Set `YARD_LOG_FORMAT=json` for machine-parseable output in
+production; the default is plain text, easier to read in a terminal.
+
 After deploy, useful console paths: **Assets** (bulk CSV/JSON), **Map**
-(clustering), **Administration** (severity policies). See
-[Console features](./console).
+(clustering), **Administration** (users, API keys, severity policies).
+See [Console features](./console).
 
 <RelatedArticles
   items={[

@@ -27,6 +27,7 @@ Yard stays honest when data goes quiet: observations carry source, unit, quality
 - [Live ops and automations](#live-ops-and-automations)
 - [Registry, map, and bulk IO](#registry-map-and-bulk-io)
 - [Incidents, severity policies, and runbooks](#incidents-severity-policies-and-runbooks)
+- [Users, roles, and API keys](#users-roles-and-api-keys)
 - [Boundaries](#boundaries)
 - [Architecture](#architecture)
 - [Repository](#repository)
@@ -67,16 +68,16 @@ Full tour: [Product tour](https://zyvorai.github.io/yard/tour) · console how-to
 | Telemetry | Measurements, freshness, quality, threshold context |
 | Work orders | Inspections, repairs, installations, maintenance |
 | Incidents | Acknowledge, assign, resolve; severity policies attach runbooks |
-| Automations | Notifications, incidents, and webhooks from events |
+| Automations | Threshold, capability-range, or stale triggers → incident, notify, webhook, Slack, email, or PagerDuty |
 | Integrations | HTTP ingest, simulator, Device Agent; optional Zyvor connectors |
-| Administration | Workspace, severity policies, credentials, audit history |
+| Administration | Workspace, users & roles, API keys, severity policies, connector credentials, audit history |
 
 ## Live ops and automations
 
 - Background **stale ticker** marks missed heartbeats without waiting for a page refresh
 - Console pages subscribe to `GET /api/v1/stream` (SSE) for live Overview and Map updates
 - Optional browser notifications for new **critical** incidents
-- Automations: threshold → open incident, stale heartbeat → open incident, notify, or **webhook**
+- Automations: a literal **threshold**, a capability's own declared **Min/Max range** (no duplicated number to keep in sync), or a **stale** heartbeat, each → open incident, notify, webhook, Slack, email, or PagerDuty
 - Create / enable / delete rules in the Automations console
 - Remote actions carry idempotency keys, expiry, and audit outcomes
 
@@ -101,6 +102,13 @@ When a threshold or stale automation opens an incident, Yard resolves a **severi
 | `default` | *(empty value)* | fallback for everything else |
 
 Seeded defaults include a critical temperature runbook and a warning heartbeat checklist. Edit policies under **Administration**; the Incidents detail panel shows the attached runbook. API: `/api/v1/severity-policies`.
+
+## Users, roles, and API keys
+
+- Three roles: **viewer** (read-only), **operator** and **admin** (both can mutate); an empty or unrecognized role fails closed to read-only rather than defaulting to admin
+- **Admin → Users**: invite by email (a 72h single-use token, no email delivery required to use it), change a role inline, or deactivate — which invalidates that person's session immediately, not just their next login
+- Self-service **password reset** (`/api/v1/auth/request-reset` + `/reset`) never reveals whether an email has an account
+- **Admin → Your API keys**: any role can mint a long-lived, per-person `yard_key_...` credential for scripts — separate from connector tokens, which are shared per machine integration rather than per person; the raw key is shown once and hashed at rest (SHA-256), same as connector tokens
 
 ## Boundaries
 
@@ -247,9 +255,9 @@ The gateway reads the agent locally and publishes normalized inventory and obser
 
 ## Data model
 
-Organization · Site · Asset · Capability · Observation · Event ·
-WorkOrder · Incident · SeverityPolicy · ActionRequest · Connector ·
-Automation
+Organization · User · APIKey · Site · Asset · Capability · Observation ·
+Event · WorkOrder · Incident · SeverityPolicy · ActionRequest ·
+Connector · Automation
 
 Every observation stores **source**, **unit**, **observed_at**, **received_at**, and **quality**. Severity policies map capability or automation matches to incident severity and runbook text. Remote actions require a session, expire, carry an idempotency key, and record an outcome.
 
@@ -261,7 +269,8 @@ Apple-inspired, original identity:
 - Apple-blue (`#0071e3` / `#0a84ff` in dark mode) for primary actions and selected states; the Zyvor mark keeps its own brand orange
 - Compact labeled sidebar; asset detail panel that does not replace the list
 - Dark, searchable diagnostics
-- System fonts (no CDN), visible focus, reduced-motion support
+- System fonts (no CDN), visible keyboard focus, reduced-motion support
+- Skip-to-content link; dialogs trap focus and close on Escape
 
 ## Tests
 
@@ -270,7 +279,7 @@ go test ./...
 cd web && npm test
 ```
 
-Or `make test`. Release gates cover tenant isolation, connector authentication, duplicate observations, stale telemetry, bulk import/export, severity policies, and the health → incident → work order → resolve workflow.
+Or `make test`. Release gates cover tenant isolation, connector authentication, duplicate observations, stale telemetry, bulk import/export, severity policies, the health → incident → work order → resolve workflow, capability-range alarms, the full invite/role/deactivate/API-key lifecycle, and that the SSE stream survives the request-logging middleware chain (not just the handler in isolation). The Go and TypeScript SDKs (`sdk/`) are each verified against a real running server.
 
 ## Docs and roadmap
 

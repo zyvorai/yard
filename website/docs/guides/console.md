@@ -24,6 +24,54 @@ Typical CSV header:
 name,external_ref,kind,status,health,manufacturer,model,serial,site_id,latitude,longitude,stale_after_sec,metadata
 ```
 
+## Telemetry — signal history
+
+Below the per-asset latest-value cards, **Signal history** picks one
+asset and capability and plots a real chronological sparkline over a
+1h/24h/7d range, backed by
+`GET /api/v1/assets/{id}/observations?capability=...&from=...&to=...`
+(both `from`/`to` are optional RFC3339 bounds).
+
+## Automations — triggers and actions
+
+Trigger kinds:
+
+| Trigger | Fires when | Needs |
+| --- | --- | --- |
+| `threshold` | `capability` `operator` `threshold` (e.g. `temperature gt 75`) | An explicit operator + literal threshold |
+| `capability_min` / `capability_max` | The observation falls outside the **capability's own** declared `Min`/`Max` | Nothing else — no duplicated number to keep in sync |
+| `stale` | Missed heartbeat past `stale_after_sec` | — |
+
+Actions: `open_incident`, `notify`, `webhook`, `slack`, `email`,
+`pagerduty`. Each action-specific field (Slack webhook URL, PagerDuty
+routing key, recipient email, webhook URL) appears in the rule form only
+for the action you pick, and is stored as a small JSON blob in the
+rule's `config`.
+
+:::note Email/Slack/PagerDuty need real credentials
+These three actions are implemented and unit-tested against a local
+mock server, but not verified against a real Slack workspace,
+PagerDuty account, or SMTP relay — there wasn't one available while
+building this. Email additionally needs `YARD_SMTP_HOST` (and
+optionally `_PORT`/`_USER`/`_PASS`/`_FROM`) set as a server-wide
+environment variable, since a mail relay is operator infrastructure
+rather than a per-rule credential. Validate delivery with your own
+credentials before relying on any of the three in production.
+:::
+
+## Administration — Users and API keys
+
+**Users** (admin role only): invite by email + role, change a user's
+role inline, or deactivate/reactivate them — see
+[Security → Users](../security#users-invite-deactivate-password-reset)
+for what each of those does under the hood.
+
+**Your API keys** (any role, self-service): create a long-lived,
+per-person credential for scripts and automation — separate from
+connector tokens, which are shared per-integration rather than
+per-person. The raw token is shown once at creation; only a short hint
+is kept afterward.
+
 ## Map — clustering
 
 The Map page uses MapLibre **clustered GeoJSON** layers:
@@ -54,7 +102,8 @@ Edit policies under **Administration → Incident severity policies**
 
 <RelatedArticles
   items={[
-    {label: 'API', to: '../api', description: 'Curl examples for export/import and policies'},
+    {label: 'API', to: '../api', description: 'Curl examples for export/import, policies, and auth'},
+    {label: 'Security', to: '../security', description: 'RBAC, invite/reset flows, API keys vs connector tokens'},
     {label: 'Architecture', to: '../core-concepts/architecture', description: 'Data model'},
     {label: 'Full feature catalog', to: 'https://github.com/zyvorai/yard/blob/main/docs/ROADMAP.md', description: 'docs/ROADMAP.md'},
   ]}

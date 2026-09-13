@@ -70,16 +70,17 @@ Open `http://HOST:18080` (default lab port). Smoke from your laptop:
 YARD_URL=http://HOST:18080 ./scripts/verify-remote.sh
 ```
 
-See [Deploy](../guides/deploy) for details.
+See [Deploy](../guides/deploy) for details, including
+[backups](../guides/deploy#backups).
 
 ## What's next
 
 <RelatedArticles
   items={[
     {label: 'Architecture', to: '../core-concepts/architecture', description: 'Asset model and boundaries'},
-    {label: 'Console features', to: '../guides/console', description: 'Bulk IO, map clustering, runbooks'},
+    {label: 'Console features', to: '../guides/console', description: 'Bulk IO, map clustering, runbooks, users, API keys'},
     {label: 'Connectors', to: '../guides/connectors', description: 'Ingest and Device Agent'},
-    {label: 'API', to: '../api', description: 'Export/import and severity policies'},
+    {label: 'API', to: '../api', description: 'Full route reference, plus Go and TypeScript SDKs'},
     {label: 'Full feature catalog', to: 'https://github.com/zyvorai/yard/blob/main/docs/ROADMAP.md', description: 'docs/ROADMAP.md'},
   ]}
 />

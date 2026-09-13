@@ -34,3 +34,8 @@ fallback, no CDN fonts); use Apple-blue for primary actions and reserve
 orange for the Zyvor brand mark only. Update `docs/ROADMAP.md` and the
 Docusaurus site under `website/docs/` when you ship user-visible
 features.
+
+Schema changes go through the versioned migration runner
+(`internal/store/store.go`'s `migrations` slice) — append a new
+`{version, sql}` entry, never edit an existing one or fall back to
+ad hoc `ALTER TABLE` at startup.

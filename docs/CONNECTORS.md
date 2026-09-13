@@ -8,6 +8,12 @@ and runs without Device Agent, Nodra, Fleet, or OTA.
 Connectors send `Authorization: Bearer <token>`. Tokens are hashed at rest
 (SHA-256). Tokens are scoped to one organization.
 
+A connector token authenticates one machine integration against the
+ingest/action routes below. A human API key (`/api/v1/api-keys`) is a
+separate credential type: it authenticates one person against
+everything their own console session can already do. See the docs site
+[Security](https://zyvorai.github.io/yard/docs/security) page for both.
+
 ## HTTP ingestion
 
 `POST /api/v1/ingest/inventory`

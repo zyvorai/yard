@@ -17,6 +17,14 @@ and runs without Device Agent, Nodra, Fleet, or OTA.
 Connectors send `Authorization: Bearer <token>`. Tokens are hashed at rest
 (SHA-256) and scoped to one organization.
 
+:::note Connector token vs. API key
+A connector token authenticates one machine integration against the
+`/api/v1/ingest/*` and `/api/v1/actions` routes on this page. A human
+[API key](../security#connector-tokens-and-api-keys) authenticates one
+person against everything their own session can already do — the two
+are separate credential types, not interchangeable.
+:::
+
 ## HTTP ingestion
 
 `POST /api/v1/ingest/inventory`

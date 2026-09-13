@@ -14,9 +14,9 @@ runs alone.
 
 ## Data model
 
-Organization · Site · Asset · Capability · Observation · Event ·
-WorkOrder · Incident · SeverityPolicy · ActionRequest · Connector ·
-Automation
+Organization · User · APIKey · Site · Asset · Capability · Observation ·
+Event · WorkOrder · Incident · SeverityPolicy · ActionRequest ·
+Connector · Automation
 
 Every observation stores **source**, **unit**, **observed_at**,
 **received_at**, and **quality**. Offline data is marked stale rather than
@@ -51,7 +51,12 @@ the operations surface: health, incidents, and work orders.
 - Background stale ticker marks missed heartbeats without waiting for an
   Overview refresh
 - Console pages subscribe to `GET /api/v1/stream` (SSE)
-- Automations can open incidents, notify (audit), or call a webhook
+- Automations trigger on a literal `threshold`, a capability's own
+  declared `Min`/`Max` range (`capability_min`/`capability_max`, so the
+  range lives in one place), or a `stale` heartbeat — and can
+  `open_incident`, `notify` (audit), or call a `webhook`/`slack`/
+  `email`/`pagerduty` action, all behind one shared dispatch path so a
+  new action type is one addition, not two
 - Opened incidents inherit severity + runbook from severity policies
 
 ## Registry and map
@@ -64,6 +69,12 @@ the operations surface: health, incidents, and work orders.
 
 - **SQLite** by default (`go run`, CI, Compose)
 - **Postgres** via `YARD_DATABASE_URL` (Compose `--profile postgres`)
+- Schema changes are versioned, transactional migrations tracked in a
+  `schema_migrations` table — not ad hoc `CREATE TABLE IF NOT EXISTS`
+  — so upgrades are ordered and idempotent across both backends
+- `scripts/backup.sh`/`restore.sh` snapshot either backend (SQLite
+  `VACUUM INTO`; Postgres `pg_dump`/`pg_restore`) — see
+  [Deploy → Backups](../guides/deploy#backups)
 
 <RelatedArticles
   items={[
