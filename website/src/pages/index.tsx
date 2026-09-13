@@ -141,6 +141,9 @@ function EnterpriseCTA() {
             to="mailto:sales@zyvor.dev">
             Contact sales@zyvor.dev
           </Link>
+          <p style={{marginTop: '1rem'}}>
+            <Link to="/compare">See the full comparison →</Link>
+          </p>
         </Reveal>
       </div>
     </section>
