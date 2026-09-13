@@ -92,15 +92,6 @@ export default function Shell({ children }: { children: ReactNode }) {
               <div className="sub">zyvor.dev</div>
             </div>
           </div>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Sign out"
-            title="Sign out"
-            onClick={signOut}
-          >
-            <SignOutIcon />
-          </button>
         </div>
         <nav className="nav">
           {items.slice(0, 7).map(([to, label]) => (
@@ -123,6 +114,15 @@ export default function Shell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <main className={mapMode ? "main main--map" : "main"}>{children}</main>
+      <button
+        type="button"
+        className="global-signout"
+        aria-label="Sign out"
+        title="Sign out"
+        onClick={signOut}
+      >
+        <SignOutIcon />
+      </button>
       <nav className="mobile-nav" aria-label="Primary">
         {mobileItems.map(([to, label]) => (
           <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "active" : "")}>

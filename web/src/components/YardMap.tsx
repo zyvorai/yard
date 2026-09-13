@@ -28,6 +28,7 @@ export default function YardMap({ pins, selectedId, onSelect }: Props) {
   const mapRef = useRef<MapRef>(null);
   const userMoved = useRef(false);
   const style = theme === "dark" ? MAP_STYLE_DARK : MAP_STYLE_LIGHT;
+  const accentHex = theme === "dark" ? "#0a84ff" : "#0071e3";
 
   const geojson = useMemo(() => ({
     type: "FeatureCollection" as const,
@@ -149,7 +150,7 @@ export default function YardMap({ pins, selectedId, onSelect }: Props) {
             type="circle"
             filter={["has", "point_count"]}
             paint={{
-              "circle-color": ["step", ["get", "point_count"], "#0a84ff", 8, "#ff9f0a", 25, "#ff5a15"],
+              "circle-color": ["step", ["get", "point_count"], "#0a84ff", 8, "#ff9f0a", 25, "#004a99"],
               "circle-radius": ["step", ["get", "point_count"], 18, 8, 24, 25, 32],
               "circle-stroke-width": 2,
               "circle-stroke-color": "#ffffff",
@@ -183,7 +184,7 @@ export default function YardMap({ pins, selectedId, onSelect }: Props) {
               ],
               "circle-radius": ["case", ["==", ["get", "id"], selectedId || ""], 10, 7],
               "circle-stroke-width": ["case", ["==", ["get", "id"], selectedId || ""], 3, 2],
-              "circle-stroke-color": ["case", ["==", ["get", "id"], selectedId || ""], "#ff5a15", "#ffffff"],
+              "circle-stroke-color": ["case", ["==", ["get", "id"], selectedId || ""], accentHex, "#ffffff"],
             }}
           />
         </Source>

@@ -242,7 +242,7 @@ Every observation stores **source**, **unit**, **observed_at**, **received_at**,
 Apple-inspired, original identity:
 
 - White and soft-gray surfaces, dark type, generous spacing
-- Orange (`#FF5A1F`) only for the Zyvor mark, primary actions, and selected states
+- Apple-blue (`#0071e3` / `#0a84ff` in dark mode) for primary actions and selected states; the Zyvor mark keeps its own brand orange
 - Compact labeled sidebar; asset detail panel that does not replace the list
 - Dark, searchable diagnostics
 - System fonts (no CDN), visible focus, reduced-motion support

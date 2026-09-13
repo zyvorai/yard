@@ -11,7 +11,7 @@
  */
 
 /* Apple-blue palette — Zyvor docs-site family (same as Netra).
-   Console product orange stays in web/; not used for docs links/highlights. */
+   The console (web/) now shares this same Apple-blue accent. */
 :root {
   --ifm-color-primary: #0071e3;
   --ifm-color-primary-dark: #0064cc;
