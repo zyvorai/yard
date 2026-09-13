@@ -1,4 +1,4 @@
-const TOKEN_KEY = "estate.token";
+const TOKEN_KEY = "yard.token";
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || "";

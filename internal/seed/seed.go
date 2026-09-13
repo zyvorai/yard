@@ -6,14 +6,14 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/zyvorai/estate/internal/idgen"
-	"github.com/zyvorai/estate/internal/model"
-	"github.com/zyvorai/estate/internal/store"
+	"github.com/zyvorai/yard/internal/idgen"
+	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
-const DemoEmail = "admin@estate.local"
-const DemoPassword = "estate-admin"
+const DemoEmail = "admin@yard.local"
+const DemoPassword = "yard-admin"
 
 type Result struct {
 	Organization *model.Organization
@@ -102,7 +102,7 @@ func Bootstrap(ctx context.Context, st *store.Store) (*Result, error) {
 			{Name: "open", Kind: "state", Unit: "1"},
 			{Name: "heartbeat", Kind: "presence", Unit: "1"},
 		}},
-		{"Simulator thermal load", "SIM-TEMP-A", "equipment", "Estate", "Sim v1", "SIM-A", plant.ID, 19.8765, 75.3438, []model.Capability{
+		{"Simulator thermal load", "SIM-TEMP-A", "equipment", "Yard", "Sim v1", "SIM-A", plant.ID, 19.8765, 75.3438, []model.Capability{
 			{Name: "temperature", Kind: "measurement", Unit: "°C", Max: f64(75)},
 			{Name: "heartbeat", Kind: "presence", Unit: "1"},
 		}},
@@ -137,8 +137,8 @@ func Bootstrap(ctx context.Context, st *store.Store) (*Result, error) {
 		}
 	}
 
-	ingestTok := "est_ingest_" + idgen.Secret(16)
-	simTok := "est_sim_" + idgen.Secret(16)
+	ingestTok := "yard_ingyard_" + idgen.Secret(16)
+	simTok := "yard_sim_" + idgen.Secret(16)
 	httpConn := &model.Connector{
 		OrganizationID: org.ID,
 		Name:           "Generic HTTP ingestion",

@@ -6,7 +6,7 @@
   --muted: #6e6e73;
   --faint: #86868b;
   --line: rgba(0, 0, 0, 0.08);
-  --accent: #ff5a1f;
+  --accent: #ff5a15;
   --accent-soft: #fff1eb;
   --ok: #34c759;
   --warn: #ff9f0a;
@@ -103,6 +103,34 @@ tr.selected td { background: var(--accent-soft); }
 .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 .btn.small { padding: 6px 10px; border-radius: 10px; font-size: 12px; }
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.empty { color: var(--muted); padding: 8px 0; }
+.form-card h2 { margin-bottom: 12px; }
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.form-grid label.span-2 { grid-column: span 2; }
+.form-grid input, .form-grid select, .endpoint-form input {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.form-error { color: var(--bad); font-size: 13px; margin: 8px 0 0; }
+.map-legend { display: flex; gap: 8px; flex-wrap: wrap; margin: -8px 0 14px; }
+.endpoint-form input { width: 100%; margin-top: 4px; }
+.map .dot.warn { background: var(--warn); }
 
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
 .panel {

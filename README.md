@@ -1,10 +1,10 @@
-# Estate
+# Yard
 
 **Open asset and operations platform.** Apache-2.0.
 
-Estate is a standalone registry for physical operations: devices, vehicles,
+Yard is a standalone registry for physical operations: devices, vehicles,
 machines, sensors, sites, telemetry, incidents, and work orders. Zyvor
-products plug in as optional connectors. You can install Estate without
+products plug in as optional connectors. You can install Yard without
 installing anything else in the Zyvor suite.
 
 This is an original implementation. It is not a fork of Fleetbase
@@ -16,7 +16,7 @@ Logistics platforms optimize dispatch. Infrastructure platforms optimize
 runtimes. Field teams still stitch device health, site context, and
 maintenance work across three consoles.
 
-Estate’s core object is an **asset**. A device is one asset kind. Vehicles
+Yard’s core object is an **asset**. A device is one asset kind. Vehicles
 and route optimization can arrive later as an optional logistics
 extension — they do not own the data model.
 
@@ -37,7 +37,7 @@ extension — they do not own the data model.
 
 | Component | Responsibility |
 | --- | --- |
-| Estate | Asset registry, sites, workflows, incidents, shared UI |
+| Yard | Asset registry, sites, workflows, incidents, shared UI |
 | Device Agent | Hardware discovery, health, local diagnostics |
 | Nodra connector | Decoded industrial telemetry and buffered events |
 | Zyvor Fleet connector | Lifecycle requests and progress |
@@ -45,26 +45,26 @@ extension — they do not own the data model.
 | HTTP / simulator | Zero-dependency evaluation path |
 
 Device Agent documents this split: it reports physical capability, Nodra
-interprets protocols, Fleet owns desired state. Estate preserves those
+interprets protocols, Fleet owns desired state. Yard preserves those
 lines and adds the operations surface.
 
 ## Quick start
 
 ```bash
-go run ./cmd/estate
+go run ./cmd/yard
 ```
 
 Open [http://127.0.0.1:8080](http://127.0.0.1:8080)
 
 ```
-admin@estate.local
-estate-admin
+admin@yard.local
+yard-admin
 ```
 
 In another terminal:
 
 ```bash
-export ESTATE_SIMULATOR_TOKEN=$(cat data/simulator.token)
+export YARD_SIMULATOR_TOKEN=$(cat data/simulator.token)
 go run ./cmd/simulator
 ```
 
@@ -86,20 +86,46 @@ Vite proxies `/api` to `:8080`.
 docker compose up --build
 ```
 
-Compose starts Estate and the included simulator. PostgreSQL + PostGIS is
-the documented production target; the first release ships a SQLite engine
-so `go run` and CI work with no extra services. The schema is portable.
+Compose starts Yard and the included simulator. PostgreSQL is available as
+an optional profile (keeps SQLite as the default for `go run` and CI):
+
+```bash
+docker compose --profile postgres up --build
+# Yard on :8081 with YARD_DATABASE_URL=postgres://...
+```
+
+### Remote lab deploy
+
+Same one-command pattern as Fabric/Nodra — cross-compile locally, install a
+systemd unit on the host, verify `/healthz`:
+
+```bash
+./scripts/ship sus@HOST              # quick redeploy
+./scripts/ship sus@HOST --full       # first install + firewall
+./scripts/ship sus@HOST --with-sim   # also start the simulator
+./scripts/ship sus@HOST --dry-run
+```
+
+Open `http://HOST:18080` (default lab port; override with `--port`, or reuse
+`.deploy-last`). Demo login remains `admin@yard.local` / `yard-admin`.
+Smoke from your laptop:
+
+```bash
+YARD_URL=http://HOST:18080 ./scripts/verify-remote.sh
+```
 
 ### Device Agent gateway
 
 ```bash
-export ESTATE_INGEST_TOKEN=$(cat data/ingest.token)
+export YARD_INGEST_TOKEN=$(cat data/ingest.token)
 export DEVICE_AGENT_URL=http://127.0.0.1:9188
 go run ./cmd/agent-gateway
 ```
 
 The gateway reads the agent locally and publishes normalized inventory and
-observations. It does not require inbound access to every remote device.
+observations. From the Integrations console you can also run
+`inventory.refresh` and `diagnostics.read` against a configured Device Agent
+endpoint. It does not require inbound access to every remote device.
 
 ## Data model
 

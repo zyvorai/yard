@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zyvorai/estate/internal/model"
-	"github.com/zyvorai/estate/internal/store"
+	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/store"
 )
 
 func setup(t *testing.T) (*store.Store, *Engine, string, string) {

@@ -14,11 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zyvorai/estate/internal/idgen"
-	"github.com/zyvorai/estate/internal/jobs"
-	"github.com/zyvorai/estate/internal/model"
-	"github.com/zyvorai/estate/internal/sse"
-	"github.com/zyvorai/estate/internal/store"
+	"github.com/zyvorai/yard/internal/connectors"
+	"github.com/zyvorai/yard/internal/idgen"
+	"github.com/zyvorai/yard/internal/jobs"
+	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/sse"
+	"github.com/zyvorai/yard/internal/store"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -28,6 +29,7 @@ type Server struct {
 	Hub     *sse.Hub
 	Static  fs.FS
 	Log     *log.Logger
+	Dispatch *connectors.Dispatcher
 	tokens  map[string]string
 }
 
@@ -36,11 +38,12 @@ func New(st *store.Store, logger *log.Logger) *Server {
 		logger = log.Default()
 	}
 	return &Server{
-		Store:  st,
-		Engine: &jobs.Engine{Store: st, Log: logger},
-		Hub:    sse.New(),
-		Log:    logger,
-		tokens: map[string]string{},
+		Store:    st,
+		Engine:   &jobs.Engine{Store: st, Log: logger},
+		Hub:      sse.New(),
+		Log:      logger,
+		Dispatch: connectors.NewDispatcher(st),
+		tokens:   map[string]string{},
 	}
 }
 
@@ -78,7 +81,7 @@ func (s *Server) Handler() http.Handler {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Estate-Token")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Yard-Token")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
@@ -107,7 +110,7 @@ func bearer(r *http.Request) string {
 	if t := r.URL.Query().Get("token"); t != "" {
 		return t
 	}
-	return r.Header.Get("X-Estate-Token")
+	return r.Header.Get("X-Yard-Token")
 }
 
 type ctxKey int
@@ -207,6 +210,13 @@ func (s *Server) sites(w http.ResponseWriter, r *http.Request, u *model.User) {
 		site.OrganizationID = u.OrganizationID
 		if site.Kind == "" {
 			site.Kind = "site"
+		}
+		if site.Timezone == "" {
+			site.Timezone = "UTC"
+		}
+		if site.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "name required"})
+			return
 		}
 		if err := s.Store.UpsertSite(r.Context(), &site); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -449,16 +459,70 @@ func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.
 }
 
 func (s *Server) connectors(w http.ResponseWriter, r *http.Request, u *model.User) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListConnectors(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPatch:
+		var in struct {
+			ID          string  `json:"id"`
+			Name        *string `json:"name"`
+			Endpoint    *string `json:"endpoint"`
+			Status      *string `json:"status"`
+			Config      *string `json:"config"`
+			RotateToken bool    `json:"rotate_token"`
+		}
+		if err := readJSON(r, &in); err != nil || in.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id required"})
+			return
+		}
+		c, err := s.Store.ConnectorByID(r.Context(), u.OrganizationID, in.ID)
+		if err != nil {
+			writeJSON(w, 404, map[string]string{"error": "not found"})
+			return
+		}
+		if in.Name != nil {
+			c.Name = *in.Name
+		}
+		if in.Endpoint != nil {
+			c.Endpoint = *in.Endpoint
+		}
+		if in.Status != nil {
+			c.Status = *in.Status
+		}
+		if in.Config != nil {
+			c.Config = *in.Config
+		}
+		if err := s.Store.UpdateConnector(r.Context(), u.OrganizationID, c); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		out := map[string]any{"connector": c}
+		if in.RotateToken {
+			tok := "yard_" + c.Kind + "_" + idgen.Secret(16)
+			sum := sha256.Sum256([]byte(tok))
+			hint := tok
+			if len(hint) > 12 {
+				hint = hint[:12] + "…"
+			}
+			if err := s.Store.SetConnectorToken(r.Context(), u.OrganizationID, c.ID, hex.EncodeToString(sum[:]), hint); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			c.TokenHint = hint
+			c.Status = "connected"
+			out["connector"] = c
+			out["token"] = tok
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "connector.update", c.ID, c.Name)
+		writeJSON(w, 200, out)
+	default:
 		writeJSON(w, 405, map[string]string{"error": "method"})
-		return
 	}
-	list, err := s.Store.ListConnectors(r.Context(), u.OrganizationID)
-	if err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, 200, list)
 }
 
 func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) {
@@ -500,8 +564,15 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 			assetID = &in.AssetID
 		}
 		var connID *string
+		var conn *model.Connector
 		if in.ConnectorID != "" {
 			connID = &in.ConnectorID
+			var err error
+			conn, err = s.Store.ConnectorByID(r.Context(), u.OrganizationID, in.ConnectorID)
+			if err != nil {
+				writeJSON(w, 404, map[string]string{"error": "connector not found"})
+				return
+			}
 		}
 		act := &model.ActionRequest{
 			OrganizationID: u.OrganizationID,
@@ -517,11 +588,24 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 			writeJSON(w, 409, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = s.Store.CompleteAction(r.Context(), act.ID, "recorded", "Delegated to connector; outcome recorded locally.")
-		act.Status = "recorded"
-		act.Result = "Delegated to connector; outcome recorded locally."
+		status, result := "recorded", "No connector selected; outcome recorded locally."
+		if conn != nil && s.Dispatch != nil {
+			st, res, err := s.Dispatch.Execute(r.Context(), u.OrganizationID, conn, in.Action, in.Payload)
+			status = st
+			result = res
+			if err != nil && result == "" {
+				result = err.Error()
+			}
+		}
+		_ = s.Store.CompleteAction(r.Context(), act.ID, status, result)
+		act.Status = status
+		act.Result = result
 		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "action.request", act.ID, act.Action)
-		writeJSON(w, 202, act)
+		code := 202
+		if status == "failed" {
+			code = 502
+		}
+		writeJSON(w, code, act)
 	default:
 		writeJSON(w, 405, map[string]string{"error": "method"})
 	}
@@ -734,8 +818,8 @@ func (s *Server) spa() http.Handler {
 }
 
 func DefaultDSN() string {
-	if v := os.Getenv("ESTATE_DATABASE_URL"); v != "" {
+	if v := os.Getenv("YARD_DATABASE_URL"); v != "" {
 		return v
 	}
-	return "file:data/estate.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+	return "file:data/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
 }

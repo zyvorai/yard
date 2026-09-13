@@ -24,12 +24,12 @@ type obs struct {
 }
 
 func main() {
-	base := env("ESTATE_URL", "http://127.0.0.1:8080")
-	tok := strings.TrimSpace(env("ESTATE_SIMULATOR_TOKEN", readFile(env("ESTATE_SIMULATOR_TOKEN_FILE", "data/simulator.token"))))
+	base := env("YARD_URL", "http://127.0.0.1:8080")
+	tok := strings.TrimSpace(env("YARD_SIMULATOR_TOKEN", readFile(env("YARD_SIMULATOR_TOKEN_FILE", "data/simulator.token"))))
 	if tok == "" {
-		log.Fatal("ESTATE_SIMULATOR_TOKEN is required")
+		log.Fatal("YARD_SIMULATOR_TOKEN is required")
 	}
-	trip := env("ESTATE_SIM_TRIP", "auto")
+	trip := env("YARD_SIM_TRIP", "auto")
 	log.Printf("simulator publishing to %s", base)
 	t := 0
 	for {

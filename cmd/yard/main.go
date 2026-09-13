@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/zyvorai/estate/internal/api"
-	"github.com/zyvorai/estate/internal/seed"
-	"github.com/zyvorai/estate/internal/store"
+	"github.com/zyvorai/yard/internal/api"
+	"github.com/zyvorai/yard/internal/seed"
+	"github.com/zyvorai/yard/internal/store"
 )
 
 //go:embed all:static
@@ -22,7 +22,7 @@ var staticRoot embed.FS
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	addr := env("ESTATE_LISTEN", ":8080")
+	addr := env("YARD_LISTEN", ":8080")
 	dsn := api.DefaultDSN()
 	if dir := filepath.Dir(fileFromDSN(dsn)); dir != "" && dir != "." && dir != "/" {
 		_ = os.MkdirAll(dir, 0o755)
@@ -39,8 +39,10 @@ func main() {
 	}
 	if res != nil && res.IngestToken != "" {
 		log.Printf("bootstrap %s", seed.FormatWelcome(res))
-		_ = os.WriteFile("data/ingest.token", []byte(res.IngestToken+"\n"), 0o600)
-		_ = os.WriteFile("data/simulator.token", []byte(res.SimulatorTok+"\n"), 0o600)
+		dataDir := env("YARD_DATA_DIR", "data")
+		_ = os.MkdirAll(dataDir, 0o755)
+		_ = os.WriteFile(filepath.Join(dataDir, "ingest.token"), []byte(res.IngestToken+"\n"), 0o600)
+		_ = os.WriteFile(filepath.Join(dataDir, "simulator.token"), []byte(res.SimulatorTok+"\n"), 0o600)
 	}
 
 	srv := api.New(st, log.Default())
@@ -52,7 +54,7 @@ func main() {
 
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("estate listening on %s", addr)
+		log.Printf("yard listening on %s", addr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http: %v", err)
 		}

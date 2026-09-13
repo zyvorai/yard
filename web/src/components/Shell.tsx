@@ -21,10 +21,10 @@ export default function Shell({ children }: { children: ReactNode }) {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/logo.svg" alt="Zyvor" />
+          <img src="/logo.svg" width={32} height={32} alt="Zyvor" />
           <div>
-            <div className="name">Estate</div>
-            <div className="sub">Zyvor operations</div>
+            <div className="name">Yard</div>
+            <div className="sub">zyvor.dev</div>
           </div>
         </div>
         <nav className="nav">

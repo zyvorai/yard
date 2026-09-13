@@ -1,0 +1,24 @@
+[Unit]
+Description=Yard included telemetry simulator
+Documentation=https://github.com/zyvorai/yard
+After=network-online.target yard.service
+Wants=yard.service
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/yard
+EnvironmentFile=-/etc/yard/yard.env
+ExecStart=/usr/local/bin/yard-simulator
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/yard
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=yard-simulator
+
+[Install]
+WantedBy=multi-user.target

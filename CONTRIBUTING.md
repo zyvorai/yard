@@ -1,6 +1,6 @@
-# Contributing to Estate
+# Contributing to Yard
 
-Estate is original Apache-2.0 software. Do not copy source from AGPL-licensed
+Yard is original Apache-2.0 software. Do not copy source from AGPL-licensed
 projects such as Fleetbase.
 
 ## Development
@@ -14,7 +14,7 @@ make run
 In another terminal:
 
 ```bash
-export ESTATE_SIMULATOR_TOKEN=$(cat data/simulator.token)
+export YARD_SIMULATOR_TOKEN=$(cat data/simulator.token)
 make sim
 ```
 
@@ -23,7 +23,7 @@ make sim
 - Device Agent owns hardware discovery.
 - Nodra owns industrial protocol semantics.
 - Zyvor Fleet owns remote lifecycle.
-- Estate owns the asset registry, sites, incidents, work orders, and UI.
+- Yard owns the asset registry, sites, incidents, work orders, and UI.
 
 ## Pull requests
 

@@ -11,20 +11,21 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=web /src/web/dist ./cmd/estate/static
-RUN CGO_ENABLED=0 go build -o /out/estate ./cmd/estate \
- && CGO_ENABLED=0 go build -o /out/estate-simulator ./cmd/simulator \
- && CGO_ENABLED=0 go build -o /out/estate-agent-gateway ./cmd/agent-gateway
+COPY --from=web /src/web/dist ./cmd/yard/static
+RUN CGO_ENABLED=0 go build -o /out/yard ./cmd/yard \
+ && CGO_ENABLED=0 go build -o /out/yard-simulator ./cmd/simulator \
+ && CGO_ENABLED=0 go build -o /out/yard-agent-gateway ./cmd/agent-gateway
 
 FROM alpine:3.20 AS runtime
 RUN apk add --no-cache ca-certificates wget \
- && adduser -D -H estate
-WORKDIR /var/lib/estate
-COPY --from=build /out/estate /usr/local/bin/estate
-COPY --from=build /out/estate-simulator /usr/local/bin/estate-simulator
-COPY --from=build /out/estate-agent-gateway /usr/local/bin/estate-agent-gateway
-USER estate
+ && adduser -D -H yard
+WORKDIR /var/lib/yard
+COPY --from=build /out/yard /usr/local/bin/yard
+COPY --from=build /out/yard-simulator /usr/local/bin/yard-simulator
+COPY --from=build /out/yard-agent-gateway /usr/local/bin/yard-agent-gateway
+USER yard
 EXPOSE 8080
-ENV ESTATE_LISTEN=:8080
-ENV ESTATE_DATABASE_URL=file:/var/lib/estate/estate.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)
-ENTRYPOINT ["/usr/local/bin/estate"]
+ENV YARD_LISTEN=:8080
+ENV YARD_DATA_DIR=/var/lib/yard
+ENV YARD_DATABASE_URL=file:/var/lib/yard/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)
+ENTRYPOINT ["/usr/local/bin/yard"]

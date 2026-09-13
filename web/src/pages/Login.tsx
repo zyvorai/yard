@@ -2,8 +2,8 @@ import { FormEvent, useState } from "react";
 import { api, setToken } from "../lib/api";
 
 export default function Login({ onIn }: { onIn: () => void }) {
-  const [email, setEmail] = useState("admin@estate.local");
-  const [password, setPassword] = useState("estate-admin");
+  const [email, setEmail] = useState("admin@yard.local");
+  const [password, setPassword] = useState("yard-admin");
   const [err, setErr] = useState("");
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -23,8 +23,8 @@ export default function Login({ onIn }: { onIn: () => void }) {
     <div className="auth">
       <form className="auth-card" onSubmit={submit}>
         <img src="/logo.svg" width={40} height={40} alt="Zyvor" />
-        <p className="kicker" style={{ marginTop: 16 }}>Zyvor</p>
-        <h1>Estate</h1>
+        <p className="kicker" style={{ marginTop: 16 }}>zyvor.dev</p>
+        <h1>Yard</h1>
         <p className="lede">Sign in to the asset and operations workspace.</p>
         <div className="field">
           <label htmlFor="email">Email</label>
@@ -38,7 +38,7 @@ export default function Login({ onIn }: { onIn: () => void }) {
         <button className="btn accent" type="submit" style={{ width: "100%", marginTop: 8 }}>
           Continue
         </button>
-        <p className="hint">Demo: admin@estate.local / estate-admin</p>
+        <p className="hint">Demo: admin@yard.local / yard-admin</p>
       </form>
     </div>
   );

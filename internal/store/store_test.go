@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zyvorai/estate/internal/model"
+	"github.com/zyvorai/yard/internal/model"
 )
 
 func TestAssetAndObservationRoundTrip(t *testing.T) {

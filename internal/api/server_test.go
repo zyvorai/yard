@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/zyvorai/estate/internal/seed"
-	"github.com/zyvorai/estate/internal/store"
+	"github.com/zyvorai/yard/internal/seed"
+	"github.com/zyvorai/yard/internal/store"
 )
 
 func TestLoginAndFirstReleaseWorkflow(t *testing.T) {
@@ -118,7 +118,7 @@ func TestLoginAndFirstReleaseWorkflow(t *testing.T) {
 		t.Fatalf("resolve %d", presp.StatusCode)
 	}
 
-	bad := []byte(`{"email":"admin@estate.local","password":"nope"}`)
+	bad := []byte(`{"email":"admin@yard.local","password":"nope"}`)
 	bresp, _ := http.Post(ts.URL+"/api/v1/auth/login", "application/json", bytes.NewReader(bad))
 	if bresp.StatusCode != 401 {
 		t.Fatalf("bad login %d", bresp.StatusCode)

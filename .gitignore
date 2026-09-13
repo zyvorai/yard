@@ -29,9 +29,13 @@ Thumbs.db
 
 # Data
 data/
+.deploy-last
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 
 # Logs
 *.log
+
+*.tsbuildinfo
+web/tsconfig.tsbuildinfo

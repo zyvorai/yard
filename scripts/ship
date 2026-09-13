@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: Apache-2.0
+#
+# Super-easy Yard ship (Fabric-style entrypoint).
+#
+#   ./scripts/ship sus@HOST              # quick redeploy + verify
+#   ./scripts/ship sus@HOST --full       # first install (open firewall)
+#   ./scripts/ship sus@HOST --with-sim   # also start included simulator
+#   ./scripts/ship sus@HOST --dry-run
+#
+# Flags: --full --with-sim --skip-verify --dry-run --port N
+# Exit: 0 OK · 1 deploy/verify fail · 2 misconfig
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_DIR"
+exec </dev/null
+
+FULL=0
+WITH_SIM=0
+SKIP_VERIFY=0
+DRY_RUN=0
+PORT_ARGS=()
+TARGET=""
+
+usage() {
+  cat <<EOF
+Usage: ./scripts/ship USER@HOST [flags]
+
+Ship Yard to one host, then verify /healthz.
+
+  --full           Full install (open firewall port)
+  --with-sim       Also enable yard-simulator.service
+  --skip-verify    Skip health / first-release checks
+  --dry-run        Print plan only
+  --port N         Listen port (default 18080 or .deploy-last)
+  -h, --help       This help
+
+Env:
+  YARD_PORT / DEPLOY_PASS
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --full) FULL=1; shift ;;
+    --with-sim) WITH_SIM=1; shift ;;
+    --skip-verify) SKIP_VERIFY=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    --port)
+      [[ $# -ge 2 ]] || { echo "misconfig: --port needs a value" >&2; exit 2; }
+      PORT_ARGS=(--port "$2"); shift 2
+      ;;
+    --port=*) PORT_ARGS=(--port "${1#*=}"); shift ;;
+    -*)
+      echo "misconfig: unknown flag $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [[ -n "$TARGET" ]]; then
+        echo "misconfig: unexpected argument $1" >&2
+        exit 2
+      fi
+      TARGET="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$TARGET" ]]; then
+  if [[ -f "$REPO_DIR/.deploy-last" ]]; then
+    # shellcheck disable=SC1091
+    source "$REPO_DIR/.deploy-last"
+    TARGET="${USER}@${HOST}"
+  else
+    echo "misconfig: missing USER@HOST" >&2
+    usage >&2
+    exit 2
+  fi
+fi
+
+if [[ "$TARGET" != *@* ]]; then
+  echo "misconfig: use USER@HOST (got: $TARGET)" >&2
+  exit 2
+fi
+
+ARGS=("$TARGET")
+[[ "$FULL" -eq 1 ]] && ARGS+=(--full)
+[[ "$WITH_SIM" -eq 1 ]] && ARGS+=(--with-sim)
+[[ "$SKIP_VERIFY" -eq 1 ]] && ARGS+=(--skip-verify)
+[[ "$DRY_RUN" -eq 1 ]] && ARGS+=(--dry-run)
+ARGS+=("${PORT_ARGS[@]+"${PORT_ARGS[@]}"}")
+
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║  ship → ${TARGET}"
+echo "║  mode: $([ "$FULL" -eq 1 ] && echo full || echo quick)  sim: $([ "$WITH_SIM" -eq 1 ] && echo yes || echo no)"
+echo "╚══════════════════════════════════════════════════════════╝"
+
+exec "$SCRIPT_DIR/deploy-remote.sh" "${ARGS[@]}"

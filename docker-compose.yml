@@ -1,15 +1,17 @@
 services:
-  estate:
+  yard:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile
     ports:
       - "8080:8080"
     environment:
-      ESTATE_LISTEN: ":8080"
-      ESTATE_DATABASE_URL: "file:/var/lib/estate/estate.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+      YARD_LISTEN: ":8080"
+      YARD_DATABASE_URL: "file:/var/lib/yard/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+      YARD_DATA_DIR: /var/lib/yard
+      YARD_URL: http://yard:8080
     volumes:
-      - estate-data:/var/lib/estate
+      - yard-data:/var/lib/yard
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 10s
@@ -21,16 +23,59 @@ services:
       context: .
       dockerfile: deploy/docker/Dockerfile
       target: runtime
-    command: ["/usr/local/bin/estate-simulator"]
+    command: ["/usr/local/bin/yard-simulator"]
     environment:
-      ESTATE_URL: http://estate:8080
-      ESTATE_SIMULATOR_TOKEN_FILE: /var/lib/estate/simulator.token
-      ESTATE_SIM_TRIP: auto
+      YARD_URL: http://yard:8080
+      YARD_SIMULATOR_TOKEN_FILE: /var/lib/yard/simulator.token
+      YARD_SIM_TRIP: auto
     volumes:
-      - estate-data:/var/lib/estate
+      - yard-data:/var/lib/yard
     depends_on:
-      estate:
+      yard:
         condition: service_healthy
 
+  # Production-style store: docker compose --profile postgres up --build
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: yard
+      POSTGRES_PASSWORD: yard
+      POSTGRES_DB: yard
+    ports:
+      - "5432:5432"
+    volumes:
+      - yard-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yard -d yard"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  yard-pg:
+    profiles: ["postgres"]
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      YARD_LISTEN: ":8080"
+      YARD_DATABASE_URL: "postgres://yard:yard@postgres:5432/yard?sslmode=disable"
+      YARD_DATA_DIR: /var/lib/yard
+      YARD_URL: http://127.0.0.1:8081
+    volumes:
+      - yard-pg-data:/var/lib/yard
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+
 volumes:
-  estate-data:
+  yard-data:
+  yard-pg:
+  yard-pg-data:

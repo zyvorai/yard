@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zyvorai/estate/internal/model"
-	"github.com/zyvorai/estate/internal/store"
+	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/store"
 )
 
 type Engine struct {

@@ -1,6 +1,6 @@
 # Connector contracts
 
-Estate treats Zyvor products as optional connectors. The platform installs
+Yard treats Zyvor products as optional connectors. The platform installs
 and runs without Device Agent, Nodra, Fleet, or OTA.
 
 ## Authentication
@@ -51,19 +51,35 @@ quality. Duplicate `dedupe_key` values are accepted and ignored.
 ## Device Agent gateway
 
 `cmd/agent-gateway` pulls the agent locally (`GET /api/v1/inventory`,
-`GET /api/v1/sensors`) and pushes normalized records to Estate. Remote
+`GET /api/v1/sensors`) and pushes normalized records to Yard. Remote
 devices do not need inbound ports.
+
+The same sync path lives in `internal/connectors/deviceagent` and is
+invoked from the console via `POST /api/v1/actions`:
+
+| Action | Behavior |
+| --- | --- |
+| `inventory.refresh` | Pull agent inventory/sensors → Yard ingest |
+| `diagnostics.read` | Return agent health/inventory JSON |
+
+Configure the agent URL on the connector (`PATCH /api/v1/connectors` with
+`endpoint`) or pass `{"agent_url":"..."}` in the action payload. Dispatch
+needs `YARD_INGEST_TOKEN` (or `data/ingest.token`) because connector
+tokens are stored hashed.
 
 ## Optional Zyvor connectors
 
-| Connector | Estate responsibility | External responsibility |
+| Connector | Yard responsibility | External responsibility |
 | --- | --- | --- |
 | Nodra | Display decoded telemetry once published here | Protocol interpretation, WAL, twins |
 | Zyvor Fleet | Show lifecycle request progress | Desired state, site reconciliation |
 | OTA | List campaigns in the asset Integrations tab | Execute the update |
 
-Each connector advertises supported actions. The UI only offers actions the
-connector declares.
+Nodra, Fleet, and OTA stay catalog-only until their product APIs are wired.
+Actions against them return `unsupported` rather than a fake success.
+
+Each connector advertises supported actions. The UI only offers executable
+actions for Device Agent today.
 
 ## MQTT adapter
 

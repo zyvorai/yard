@@ -1,10 +1,10 @@
-Estate
-Copyright 2026 Zyvor and Estate contributors
+Yard
+Copyright 2026 Zyvor and Yard contributors
 
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full text.
 
-Estate is an original implementation. It does not contain Fleetbase
+Yard is an original implementation. It does not contain Fleetbase
 source code. Fleetbase is a separate project licensed under AGPL-3.0;
 do not copy Fleetbase code into this repository.
 
