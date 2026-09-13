@@ -10,12 +10,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "maplibre-gl": "^6.9.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-map-gl": "^8.1.3",
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.1.0",
+    "@types/geojson": "^7946.0.16",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

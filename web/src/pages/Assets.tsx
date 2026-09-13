@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, Asset } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
 
@@ -10,6 +11,7 @@ export default function Assets() {
   const [kind, setKind] = useState("");
   const [sel, setSel] = useState<Detail | null>(null);
   const [tab, setTab] = useState("Overview");
+  const [params] = useSearchParams();
 
   async function load() {
     const qs = new URLSearchParams();
@@ -23,6 +25,11 @@ export default function Assets() {
     setSel(await api<Detail>(`/api/v1/assets/${id}`));
     setTab("Overview");
   }
+
+  useEffect(() => {
+    const focus = params.get("focus");
+    if (focus) void open(focus);
+  }, [params]);
 
   const kinds = useMemo(() => Array.from(new Set(rows.map((r) => r.kind))), [rows]);
 

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { clearToken } from "../lib/api";
+import { useTheme } from "../lib/theme";
 
 const items = [
   ["/", "Overview"],
@@ -17,6 +18,10 @@ const items = [
 ];
 
 export default function Shell({ children }: { children: ReactNode }) {
+  const loc = useLocation();
+  const { theme, setTheme } = useTheme();
+  const mapMode = loc.pathname === "/map";
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -42,12 +47,20 @@ export default function Shell({ children }: { children: ReactNode }) {
         </nav>
         <div className="foot">
           <div>Northwind Operations</div>
-          <button className="btn ghost small" style={{ marginTop: 8 }} onClick={() => { clearToken(); window.location.href = "/login"; }}>
+          <div className="theme-toggle" role="group" aria-label="Theme">
+            <button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}>
+              Light
+            </button>
+            <button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}>
+              Dark
+            </button>
+          </div>
+          <button className="btn ghost small" style={{ marginTop: 4, width: "100%" }} onClick={() => { clearToken(); window.location.href = "/login"; }}>
             Sign out
           </button>
         </div>
       </aside>
-      <main className="main">{children}</main>
+      <main className={mapMode ? "main main--map" : "main"}>{children}</main>
     </div>
   );
 }
