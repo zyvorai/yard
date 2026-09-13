@@ -10,6 +10,18 @@
  * of this file.
  */
 
+/* Self-hosted Inter (variable font) — SF-Pro-like fallback for non-Apple
+   devices, no runtime CDN call. Relative path (not an absolute /-rooted
+   one) so webpack's asset pipeline resolves it as a real file and emits
+   a correctly baseUrl-prefixed, hashed URL in the production build. */
+@font-face {
+  font-family: 'Inter';
+  src: url('../../static/fonts/Inter-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Apple-blue palette — Zyvor docs-site family (same as Netra).
    The console (web/) now shares this same Apple-blue accent. */
 :root {
@@ -23,8 +35,8 @@
   --ifm-code-font-size: 95%;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 
-  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
-    'SF Pro Text', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, 'Inter',
+    'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, system-ui, sans-serif;
   --ifm-heading-font-weight: 600;
   --ifm-line-height-base: 1.65;
 
@@ -32,7 +44,29 @@
      in src/pages, not by Infima directly. */
   --zv-section-space: clamp(4rem, 9vw, 9rem);
   --zv-hero-space: clamp(5rem, 12vw, 11rem);
+
+  /* "Liquid Glass" materials — same blur/saturate/alpha as the console
+     (web/src/styles/app.css) so both surfaces read as one family. */
+  --zv-glass-thin-bg: rgba(255, 255, 255, 0.45);
+  --zv-glass-thin-blur: saturate(180%) blur(20px);
+  --zv-glass-regular-bg: rgba(255, 255, 255, 0.65);
+  --zv-glass-regular-blur: saturate(170%) blur(28px);
+  --zv-glass-thick-bg: rgba(255, 255, 255, 0.85);
+  --zv-glass-thick-blur: saturate(160%) blur(36px);
+
+  /* Concentric radius scale — matches the console's scale exactly. */
+  --zv-radius-xl: 28px;
+  --zv-radius-lg: 18px;
+  --zv-radius-md: 12px;
+  --zv-radius-sm: 8px;
+  --zv-radius-pill: 999px;
+
+  /* Capsule buttons everywhere — the single clearest "Liquid Glass" tell,
+     cascades to every .button on every page via Infima's own extension
+     point rather than fighting .button's specificity directly. */
+  --ifm-button-border-radius: var(--zv-radius-pill);
 }
+
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
@@ -44,6 +78,10 @@
   --ifm-color-primary-lighter: #52a6ff;
   --ifm-color-primary-lightest: #85c0ff;
   --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.1);
+
+  --zv-glass-thin-bg: rgba(30, 30, 32, 0.35);
+  --zv-glass-regular-bg: rgba(30, 30, 32, 0.55);
+  --zv-glass-thick-bg: rgba(30, 30, 32, 0.75);
 }
 
 /* The hero band itself stays pure black with white text regardless of
@@ -81,9 +119,9 @@
  * ------------------------------------------------------------------- */
 .navbar {
   height: 4.5rem;
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: saturate(180%) blur(12px);
+  backdrop-filter: var(--zv-glass-regular-blur);
   background: rgba(0, 0, 0, 0.82);
 }
 
@@ -120,6 +158,13 @@
   font-weight: 650;
   letter-spacing: -0.03em;
   line-height: 1.02;
+}
+
+/* Apple's real display type tightens further as it scales up. */
+@media (min-width: 1200px) {
+  .hero__title {
+    letter-spacing: -0.035em;
+  }
 }
 
 .hero__subtitle {
@@ -184,7 +229,7 @@ article .markdown li {
 
 .menu__link {
   font-size: 0.9rem;
-  border-radius: 8px;
+  border-radius: var(--zv-radius-md);
 }
 
 .menu__link--active:not(.menu__link--sublist) {
@@ -200,7 +245,7 @@ article .markdown li {
  * border-left instead of Infima's heavy color-bar fill.
  * ------------------------------------------------------------------- */
 .theme-admonition {
-  border-radius: 12px;
+  border-radius: var(--zv-radius-lg);
   border: 1px solid var(--ifm-color-emphasis-200);
   border-left-width: 3px;
   background: var(--ifm-color-emphasis-100);

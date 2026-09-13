@@ -25,9 +25,11 @@
   flex-direction: column;
   gap: 0.25rem;
   padding: 1rem 2.25rem 1rem 1.1rem;
-  border-radius: 12px;
+  border-radius: var(--zv-radius-lg);
   border: 1px solid var(--ifm-color-emphasis-200);
-  background: var(--ifm-background-surface-color);
+  background: var(--zv-glass-regular-bg);
+  backdrop-filter: var(--zv-glass-regular-blur);
+  -webkit-backdrop-filter: var(--zv-glass-regular-blur);
   color: var(--ifm-font-color-base);
   text-decoration: none;
   transition: border-color 0.15s ease, transform 0.15s ease;
@@ -54,4 +56,10 @@
   top: 1rem;
   right: 1.1rem;
   color: var(--ifm-color-emphasis-500);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile {
+    transition: none;
+  }
 }

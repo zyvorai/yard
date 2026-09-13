@@ -12,7 +12,7 @@
 
 .frame {
   display: block;
-  border-radius: 8px;
+  border-radius: var(--zv-radius-md);
   overflow: hidden;
   border: 1px solid var(--ifm-color-emphasis-200);
   box-shadow: 0 0 0 rgba(0, 0, 0, 0);

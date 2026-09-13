@@ -27,20 +27,20 @@ const NAV_ICONS: Record<string, ReactNode> = {
   "/onboarding": navIcon("M5 21V4h11l3 4-3 4H5"),
 };
 
-const items: [string, string][] = [
-  ["/", "Overview"],
-  ["/assets", "Assets"],
-  ["/sites", "Sites"],
-  ["/map", "Map"],
-  ["/telemetry", "Telemetry"],
-  ["/work", "Work orders"],
-  ["/incidents", "Incidents"],
-  ["/automations", "Automations"],
-  ["/integrations", "Integrations"],
-  ["/admin", "Administration"],
-  ["/diagnostics", "Diagnostics"],
-  ["/settings", "Settings"],
-  ["/onboarding", "Get started"],
+const items: [string, string, string][] = [
+  ["/", "Overview", "accent"],
+  ["/assets", "Assets", "teal"],
+  ["/sites", "Sites", "indigo"],
+  ["/map", "Map", "purple"],
+  ["/telemetry", "Telemetry", "pink"],
+  ["/work", "Work orders", "ok"],
+  ["/incidents", "Incidents", "bad"],
+  ["/automations", "Automations", "purple"],
+  ["/integrations", "Integrations", "indigo"],
+  ["/admin", "Administration", "stale"],
+  ["/diagnostics", "Diagnostics", "warn"],
+  ["/settings", "Settings", "stale"],
+  ["/onboarding", "Get started", "ok"],
 ];
 
 const mobileItems = [
@@ -94,16 +94,16 @@ export default function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <nav className="nav">
-          {items.slice(0, 7).map(([to, label]) => (
+          {items.slice(0, 7).map(([to, label, tone]) => (
             <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "active" : "")}>
-              {NAV_ICONS[to]}
+              <span className={`nav-icon-chip tone-${tone}`}>{NAV_ICONS[to]}</span>
               {label}
             </NavLink>
           ))}
           <div className="sec">Platform</div>
-          {items.slice(7).map(([to, label]) => (
+          {items.slice(7).map(([to, label, tone]) => (
             <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "active" : "")}>
-              {NAV_ICONS[to]}
+              <span className={`nav-icon-chip tone-${tone}`}>{NAV_ICONS[to]}</span>
               {label}
             </NavLink>
           ))}
