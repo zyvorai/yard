@@ -3,12 +3,16 @@
 [![CI](https://github.com/zyvorai/yard/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/yard/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-zyvorai.github.io%2Fyard-0a84ff)](https://zyvorai.github.io/yard/)
+[![Go 1.22+](https://img.shields.io/badge/go-1.22%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![React 18](https://img.shields.io/badge/react-18-0a84ff?logo=react&logoColor=white)](web/package.json)
 
 ![Yard — open asset and operations platform](docs/social/yard-share-card.png)
 
 **Open asset and operations platform — devices, sites, telemetry, incidents, and work orders. Zyvor connectors are optional. Yard runs alone.**
 
 📖 **[Read the full docs](https://zyvorai.github.io/yard/)** — quickstart, architecture, console features, API, security, and a product tour.
+
+**[Quick start](#quick-start)** · **[Product tour](https://zyvorai.github.io/yard/tour)** · **[Compare](https://zyvorai.github.io/yard/compare)** · **[Full docs](https://zyvorai.github.io/yard/)**
 
 Yard is a standalone registry for physical operations. A device is one asset kind; vehicles, machines, sensors, and equipment share the same model. Device Agent, Nodra, Fleet, and OTA plug in when you need them — you can install Yard without installing anything else in the Zyvor suite.
 
@@ -261,6 +265,7 @@ Or `make test`. Release gates cover tenant isolation, connector authentication, 
 | Resource | Link |
 | --- | --- |
 | Product docs | [zyvorai.github.io/yard](https://zyvorai.github.io/yard/) |
+| Compare | [Yard Core vs. Zyvor Enterprise](https://zyvorai.github.io/yard/compare) |
 | Feature catalog | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | Connectors | [docs/CONNECTORS.md](docs/CONNECTORS.md) |
 | OpenAPI | [openapi.yaml](openapi.yaml) |
