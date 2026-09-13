@@ -26,6 +26,7 @@ Yard stays honest when data goes quiet: observations carry source, unit, quality
 - [Boundaries](#boundaries)
 - [Architecture](#architecture)
 - [Repository](#repository)
+- [Prerequisites](#prerequisites)
 - [Quick start](#quick-start)
 - [Data model](#data-model)
 - [Interface](#interface)
@@ -155,6 +156,10 @@ docs/social/           share / OG card
 openapi.yaml           OpenAPI 3.0
 scripts/ship           remote lab deploy (Fabric-style)
 ```
+
+## Prerequisites
+
+Go 1.22+ and Node 20+ (the docs site build uses Node 22). SQLite ships with the Go standard toolchain via `modernc.org/sqlite` — no CGO, no system SQLite package required. Postgres is optional (`docker compose --profile postgres`). No other services are required to run Yard standalone.
 
 ## Quick start
 
