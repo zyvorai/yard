@@ -238,6 +238,8 @@ _ssh "
 info "Starting yard.service"
 _ssh "
   set -euo pipefail
+  # Estate (pre-rename) may still own the listen port on lab hosts.
+  $SUDO systemctl disable --now estate.service estate-simulator.service 2>/dev/null || true
   $SUDO systemctl daemon-reload
   $SUDO systemctl enable --now yard.service
   $SUDO systemctl restart yard.service
@@ -259,7 +261,7 @@ _ssh "
     fi
   fi
   sleep 1
-  if $SUDO systemctl is-active yard.service &>/dev/null; then
+  if $SUDO systemctl is-active --quiet yard.service && curl -fsS "http://127.0.0.1:${YARD_PORT}/healthz" | grep -qx ok; then
     echo 'yard.service: running'
   else
     echo 'yard.service: FAILED'
