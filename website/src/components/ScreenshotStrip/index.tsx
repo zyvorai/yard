@@ -24,7 +24,7 @@ export default function ScreenshotStrip(): ReactNode {
         </Heading>
         <p className="text--center">
           Captured against a live lab deployment.{' '}
-          <Link to="/gallery">See the full tour →</Link>
+          <Link to="/tour">See the full tour →</Link>
         </p>
         <div className={styles.grid}>
           {SHOTS.map((shot) => (

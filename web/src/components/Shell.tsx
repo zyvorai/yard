@@ -3,7 +3,31 @@ import { NavLink, useLocation } from "react-router-dom";
 import { clearToken } from "../lib/api";
 import CommandPalette from "./CommandPalette";
 
-const items = [
+function navIcon(d: string) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d={d} stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const NAV_ICONS: Record<string, ReactNode> = {
+  "/": navIcon("M4 13h6V4H4v9ZM14 20h6v-9h-6v9ZM14 4v4h6V4h-6ZM4 20h6v-4H4v4Z"),
+  "/assets": navIcon("M3 8l9-5 9 5-9 5-9-5ZM3 8v8l9 5 9-5V8M12 13v8"),
+  "/sites": navIcon("M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 11h.01M15 11h.01"),
+  "/map": navIcon("M9 20l-6-2V4l6 2 6-2 6 2v14l-6-2-6 2ZM9 6v14M15 4v14"),
+  "/telemetry": navIcon("M3 12h4l2 7 4-14 2 7h4"),
+  "/work": navIcon("M9 4h6a1 1 0 0 1 1 1v2H8V5a1 1 0 0 1 1-1ZM5 7h14v13H5V7Z"),
+  "/incidents": navIcon("M12 3l9 16H3l9-16ZM12 10v4M12 17.5v.01"),
+  "/automations": navIcon("M13 2 4 14h6l-1 8 9-12h-6l1-8Z"),
+  "/integrations": navIcon("M9 3v4M15 3v4M7 7h10a2 2 0 0 1 2 2v2a5 5 0 0 1-5 5h-4a5 5 0 0 1-5-5V9a2 2 0 0 1 2-2ZM12 16v5"),
+  "/admin": navIcon("M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"),
+  "/diagnostics": navIcon("M4 5h16v12H4V5ZM8 21h8M12 17v4M8 9l2 2-2 2M13 13h3"),
+  "/settings": navIcon("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.07-.4.1-.8.1-1.2Z"),
+  "/onboarding": navIcon("M5 21V4h11l3 4-3 4H5"),
+};
+
+const items: [string, string][] = [
   ["/", "Overview"],
   ["/assets", "Assets"],
   ["/sites", "Sites"],
