@@ -1,0 +1,36 @@
+services:
+  estate:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ESTATE_LISTEN: ":8080"
+      ESTATE_DATABASE_URL: "file:/var/lib/estate/estate.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+    volumes:
+      - estate-data:/var/lib/estate
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+
+  simulator:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+      target: runtime
+    command: ["/usr/local/bin/estate-simulator"]
+    environment:
+      ESTATE_URL: http://estate:8080
+      ESTATE_SIMULATOR_TOKEN_FILE: /var/lib/estate/simulator.token
+      ESTATE_SIM_TRIP: auto
+    volumes:
+      - estate-data:/var/lib/estate
+    depends_on:
+      estate:
+        condition: service_healthy
+
+volumes:
+  estate-data:

@@ -1,0 +1,37 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Node
+web/node_modules/
+web/dist/
+web/.vite/
+
+# Env & secrets
+.env
+.env.local
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Logs
+*.log

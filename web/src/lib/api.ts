@@ -1,0 +1,142 @@
+const TOKEN_KEY = "estate.token";
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY) || "";
+}
+
+export function setToken(t: string) {
+  localStorage.setItem(TOKEN_KEY, t);
+}
+
+export function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("Accept", "application/json");
+  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const tok = getToken();
+  if (tok) headers.set("Authorization", `Bearer ${tok}`);
+  const res = await fetch(path, { ...init, headers });
+  if (res.status === 401) {
+    clearToken();
+    if (!path.includes("/auth/login")) window.location.href = "/login";
+    throw new Error("unauthorized");
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || res.statusText);
+  }
+  return res.json() as Promise<T>;
+}
+
+export type Asset = {
+  id: string;
+  name: string;
+  external_ref: string;
+  kind: string;
+  status: string;
+  health: string;
+  manufacturer: string;
+  model: string;
+  serial: string;
+  site_id?: string;
+  latitude?: number;
+  longitude?: number;
+  last_seen_at?: string;
+  stale_after_sec: number;
+};
+
+export type Site = {
+  id: string;
+  name: string;
+  kind: string;
+  address: string;
+  latitude?: number;
+  longitude?: number;
+};
+
+export type Incident = {
+  id: string;
+  title: string;
+  severity: string;
+  status: string;
+  owner: string;
+  summary: string;
+  resolution: string;
+  asset_id?: string;
+  opened_at: string;
+  resolved_at?: string;
+};
+
+export type WorkOrder = {
+  id: string;
+  title: string;
+  kind: string;
+  priority: string;
+  status: string;
+  assignee: string;
+  notes: string;
+  incident_id?: string;
+  asset_id?: string;
+  created_at: string;
+};
+
+export type EventItem = {
+  id: string;
+  kind: string;
+  severity: string;
+  title: string;
+  body: string;
+  created_at: string;
+};
+
+export type Telemetry = {
+  asset_id: string;
+  asset_name: string;
+  capability: string;
+  value: number;
+  unit: string;
+  quality: string;
+  source: string;
+  observed_at: string;
+  received_at: string;
+  fresh: boolean;
+};
+
+export type Overview = {
+  assets_total: number;
+  assets_healthy: number;
+  assets_degraded: number;
+  assets_critical: number;
+  assets_stale: number;
+  open_incidents: number;
+  open_work_orders: number;
+  active_connectors: number;
+  recent_events: EventItem[];
+  recent_activity: { id: string; actor: string; action: string; object: string; detail: string; created_at: string }[];
+  health_by_kind: Record<string, number>;
+};
+
+export type Connector = {
+  id: string;
+  name: string;
+  kind: string;
+  status: string;
+  endpoint: string;
+  token_hint: string;
+  actions: string;
+  last_sync_at?: string;
+};
+
+export type Automation = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  trigger_kind: string;
+  capability: string;
+  operator: string;
+  threshold: number;
+  action: string;
+};

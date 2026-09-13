@@ -1,0 +1,51 @@
+openapi: 3.0.3
+info:
+  title: Estate API
+  version: 0.1.0
+  license:
+    name: Apache-2.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: liveness
+  /api/v1/auth/login:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: session
+  /api/v1/overview:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: workspace snapshot
+  /api/v1/assets:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: assets
+  /api/v1/ingest/observations:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "202":
+          description: accepted
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
