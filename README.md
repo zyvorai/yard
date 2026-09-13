@@ -161,6 +161,11 @@ Release gates covered in tests: tenant isolation, connector authentication,
 duplicate observations, stale telemetry, and the browser-equivalent
 health → incident → work order → resolve workflow.
 
+## Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full feature catalog and the
+locked Next epics (live ops loop, then registry completeness).
+
 ## License
 
 Apache License 2.0. See `LICENSE` and `NOTICE`.

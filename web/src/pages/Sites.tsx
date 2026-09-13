@@ -3,18 +3,34 @@ import { api, Site } from "../lib/api";
 
 const KINDS = ["factory", "warehouse", "office", "customer", "site"];
 
+const empty = { name: "", kind: "factory", address: "", latitude: "", longitude: "" };
+
 export default function Sites() {
   const [rows, setRows] = useState<Site[]>([]);
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [err, setErr] = useState("");
-  const [form, setForm] = useState({ name: "", kind: "factory", address: "", latitude: "", longitude: "" });
+  const [form, setForm] = useState(empty);
 
   async function load() {
     setRows(await api<Site[]>("/api/v1/sites"));
   }
   useEffect(() => { load(); }, []);
 
-  async function create(e: FormEvent) {
+  function startEdit(s: Site) {
+    setEditId(s.id);
+    setForm({
+      name: s.name,
+      kind: s.kind,
+      address: s.address || "",
+      latitude: s.latitude != null ? String(s.latitude) : "",
+      longitude: s.longitude != null ? String(s.longitude) : "",
+    });
+    setOpen(true);
+    setErr("");
+  }
+
+  async function save(e: FormEvent) {
     e.preventDefault();
     setErr("");
     if (!form.name.trim()) {
@@ -30,13 +46,24 @@ export default function Sites() {
     if (form.latitude) body.latitude = Number(form.latitude);
     if (form.longitude) body.longitude = Number(form.longitude);
     try {
-      await api<Site>("/api/v1/sites", { method: "POST", body: JSON.stringify(body) });
-      setForm({ name: "", kind: "factory", address: "", latitude: "", longitude: "" });
+      if (editId) {
+        await api(`/api/v1/sites/${editId}`, { method: "PATCH", body: JSON.stringify(body) });
+      } else {
+        await api<Site>("/api/v1/sites", { method: "POST", body: JSON.stringify(body) });
+      }
+      setForm(empty);
+      setEditId(null);
       setOpen(false);
       await load();
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : "create failed");
+      setErr(ex instanceof Error ? ex.message : "save failed");
     }
+  }
+
+  async function remove(s: Site) {
+    if (!confirm(`Delete site ${s.name}?`)) return;
+    await api(`/api/v1/sites/${s.id}`, { method: "DELETE" });
+    await load();
   }
 
   return (
@@ -46,13 +73,13 @@ export default function Sites() {
           <h1>Sites</h1>
           <p className="lede">Factories, warehouses, offices, and customer locations.</p>
         </div>
-        <button className="btn accent" type="button" onClick={() => setOpen((v) => !v)}>
-          {open ? "Cancel" : "Add site"}
+        <button className="btn accent" type="button" onClick={() => { setOpen((v) => !v); setEditId(null); setForm(empty); setErr(""); }}>
+          {open && !editId ? "Cancel" : "Add site"}
         </button>
       </div>
       {open && (
-        <form className="card form-card" onSubmit={create} style={{ marginBottom: 16 }}>
-          <h2>New site</h2>
+        <form className="card form-card" onSubmit={save} style={{ marginBottom: 16 }}>
+          <h2>{editId ? "Edit site" : "New site"}</h2>
           <div className="form-grid">
             <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
             <label>Kind
@@ -66,7 +93,8 @@ export default function Sites() {
           </div>
           {err && <p className="form-error">{err}</p>}
           <div className="row-actions" style={{ marginTop: 12 }}>
-            <button className="btn accent" type="submit">Create site</button>
+            <button className="btn accent" type="submit">{editId ? "Save" : "Create site"}</button>
+            {editId && <button className="btn ghost" type="button" onClick={() => { setOpen(false); setEditId(null); }}>Cancel</button>}
           </div>
         </form>
       )}
@@ -79,6 +107,10 @@ export default function Sites() {
             {(s.latitude != null && s.longitude != null) && (
               <p className="lede">{s.latitude.toFixed(4)}, {s.longitude.toFixed(4)}</p>
             )}
+            <div className="row-actions" style={{ marginTop: 10 }}>
+              <button type="button" className="btn small ghost" onClick={() => startEdit(s)}>Edit</button>
+              <button type="button" className="btn small ghost" onClick={() => remove(s)}>Delete</button>
+            </div>
           </div>
         ))}
         {!rows.length && <p className="empty">No sites yet. Add the first location.</p>}

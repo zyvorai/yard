@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Asset, Site } from "../lib/api";
 import { Health, fmt } from "../components/Shell";
 import type { MapPin } from "../components/YardMap";
+import { notifyCritical, useYardStream } from "../lib/stream";
 
 const YardMap = lazy(() => import("../components/YardMap"));
 
@@ -17,7 +18,7 @@ export default function MapPage() {
   const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     Promise.all([
       api<Asset[]>("/api/v1/assets"),
       api<Site[]>("/api/v1/sites"),
@@ -26,6 +27,19 @@ export default function MapPage() {
       setSites(s);
     });
   }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  useYardStream((ev) => {
+    if (ev.kind === "asset.health" || ev.kind === "assets.stale" || ev.kind === "observation" || ev.kind === "inventory" || ev.kind === "site.created" || ev.kind === "site.updated") {
+      reload();
+    }
+    if (ev.kind === "incident.opened") {
+      const d = ev.data as { title?: string; severity?: string };
+      if (d?.severity === "critical") notifyCritical("Critical incident", d.title || "New incident");
+      reload();
+    }
+  });
 
   const pins: MapPin[] = useMemo(() => {
     const out: MapPin[] = [];

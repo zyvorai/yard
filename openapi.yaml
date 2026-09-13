@@ -1,7 +1,8 @@
 openapi: 3.0.3
 info:
   title: Yard API
-  version: 0.1.0
+  version: 0.2.0
+  description: Open asset and operations platform
   license:
     name: Apache-2.0
 servers:
@@ -9,36 +10,224 @@ servers:
 paths:
   /healthz:
     get:
+      summary: Liveness
       responses:
         "200":
-          description: liveness
+          description: ok
+  /readyz:
+    get:
+      summary: Readiness
+      responses:
+        "200":
+          description: ready
+  /metrics:
+    get:
+      summary: Prometheus-style counters
+      responses:
+        "200":
+          description: text exposition
   /api/v1/auth/login:
     post:
+      summary: Create session
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required: [email, password]
               properties:
                 email: { type: string }
                 password: { type: string }
       responses:
         "200":
-          description: session
+          description: session token
+  /api/v1/auth/me:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: current user
   /api/v1/overview:
     get:
       security: [{ bearerAuth: [] }]
       responses:
         "200":
           description: workspace snapshot
-  /api/v1/assets:
+  /api/v1/sites:
     get:
       security: [{ bearerAuth: [] }]
       responses:
         "200":
+          description: sites
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: created
+  /api/v1/sites/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: site
+    patch:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: updated
+    delete:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: deleted
+  /api/v1/assets:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: kind
+          schema: { type: string }
+        - in: query
+          name: health
+          schema: { type: string }
+      responses:
+        "200":
           description: assets
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: created
+  /api/v1/assets/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: asset detail with capabilities, observations, events, work orders
+    patch:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: updated
+    delete:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: deleted
+  /api/v1/telemetry:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: latest points
+  /api/v1/events:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: events
+  /api/v1/incidents:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: incidents
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: created
+  /api/v1/work-orders:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: work orders
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: created
+  /api/v1/connectors:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: connectors
+    patch:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: updated
+  /api/v1/actions:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: actions
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "202":
+          description: accepted
+  /api/v1/automations:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: automations
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: created
+    patch:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: updated or deleted
+  /api/v1/audit:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: audit log
+  /api/v1/stream:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Server-sent events
+      responses:
+        "200":
+          description: event stream
   /api/v1/ingest/observations:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "202":
+          description: accepted
+        "429":
+          description: rate limited
+  /api/v1/ingest/inventory:
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: upserted asset
+  /api/v1/ingest/events:
     post:
       security: [{ bearerAuth: [] }]
       responses:

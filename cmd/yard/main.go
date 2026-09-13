@@ -52,6 +52,10 @@ func main() {
 		}
 	}
 
+	runCtx, runCancel := context.WithCancel(context.Background())
+	defer runCancel()
+	srv.Engine.StartStaleTicker(runCtx, 30*time.Second)
+
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		log.Printf("yard listening on %s", addr)
@@ -63,6 +67,7 @@ func main() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	<-ch
+	runCancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(ctx)

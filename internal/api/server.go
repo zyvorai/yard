@@ -24,26 +24,32 @@ import (
 )
 
 type Server struct {
-	Store   *store.Store
-	Engine  *jobs.Engine
-	Hub     *sse.Hub
-	Static  fs.FS
-	Log     *log.Logger
+	Store    *store.Store
+	Engine   *jobs.Engine
+	Hub      *sse.Hub
+	Static   fs.FS
+	Log      *log.Logger
 	Dispatch *connectors.Dispatcher
-	tokens  map[string]string
+	tokens   map[string]string
+	limiter  *ingestLimiter
+	metrics  *metrics
 }
 
 func New(st *store.Store, logger *log.Logger) *Server {
 	if logger == nil {
 		logger = log.Default()
 	}
+	hub := sse.New()
+	eng := &jobs.Engine{Store: st, Hub: hub, Log: logger}
 	return &Server{
 		Store:    st,
-		Engine:   &jobs.Engine{Store: st, Log: logger},
-		Hub:      sse.New(),
+		Engine:   eng,
+		Hub:      hub,
 		Log:      logger,
 		Dispatch: connectors.NewDispatcher(st),
 		tokens:   map[string]string{},
+		limiter:  newIngestLimiter(120, time.Minute),
+		metrics:  &metrics{},
 	}
 }
 
@@ -51,10 +57,12 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ready")) })
+	mux.HandleFunc("/metrics", s.metrics.handler)
 	mux.HandleFunc("/api/v1/auth/login", s.login)
 	mux.HandleFunc("/api/v1/auth/me", s.withUser(s.me))
 	mux.HandleFunc("/api/v1/overview", s.withUser(s.overview))
 	mux.HandleFunc("/api/v1/sites", s.withUser(s.sites))
+	mux.HandleFunc("/api/v1/sites/", s.withUser(s.siteItem))
 	mux.HandleFunc("/api/v1/assets", s.withUser(s.assets))
 	mux.HandleFunc("/api/v1/assets/", s.withUser(s.assetItem))
 	mux.HandleFunc("/api/v1/telemetry", s.withUser(s.telemetry))
@@ -69,13 +77,28 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/audit", s.withUser(s.audit))
 	mux.HandleFunc("/api/v1/stream", s.withUser(s.stream))
 	mux.HandleFunc("/api/v1/onboarding", s.withUser(s.onboarding))
-	mux.HandleFunc("/api/v1/ingest/observations", s.withConnector(s.ingestObs))
-	mux.HandleFunc("/api/v1/ingest/inventory", s.withConnector(s.ingestInv))
-	mux.HandleFunc("/api/v1/ingest/events", s.withConnector(s.ingestEvt))
+	mux.HandleFunc("/api/v1/ingest/observations", s.rateIngest(s.withConnector(s.ingestObs)))
+	mux.HandleFunc("/api/v1/ingest/inventory", s.rateIngest(s.withConnector(s.ingestInv)))
+	mux.HandleFunc("/api/v1/ingest/events", s.rateIngest(s.withConnector(s.ingestEvt)))
 	if s.Static != nil {
 		mux.Handle("/", s.spa())
 	}
 	return cors(mux)
+}
+
+func (s *Server) rateIngest(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := bearer(r)
+		if key == "" {
+			key = r.RemoteAddr
+		}
+		if !s.limiter.allow(key) {
+			s.metrics.inc(&s.metrics.ingestReject)
+			writeJSON(w, 429, map[string]string{"error": "ingest rate limit"})
+			return
+		}
+		next(w, r)
+	}
 }
 
 func cors(next http.Handler) http.Handler {
@@ -167,6 +190,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.Store.UserByEmail(r.Context(), in.Email)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.Password)) != nil {
+		s.metrics.inc(&s.metrics.loginFail)
 		writeJSON(w, 401, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -175,6 +199,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": "session"})
 		return
 	}
+	s.metrics.inc(&s.metrics.loginOK)
 	writeJSON(w, 200, map[string]any{"token": sess.Token, "user": u, "expires_at": sess.ExpiresAt})
 }
 
@@ -202,6 +227,9 @@ func (s *Server) sites(w http.ResponseWriter, r *http.Request, u *model.User) {
 		}
 		writeJSON(w, 200, list)
 	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
 		var site model.Site
 		if err := readJSON(r, &site); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "invalid json"})
@@ -230,6 +258,70 @@ func (s *Server) sites(w http.ResponseWriter, r *http.Request, u *model.User) {
 	}
 }
 
+func (s *Server) siteItem(w http.ResponseWriter, r *http.Request, u *model.User) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/sites/")
+	id = strings.Trim(id, "/")
+	if id == "" {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	site, err := s.Store.SiteByID(r.Context(), u.OrganizationID, id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, 200, site)
+	case http.MethodPatch:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in model.Site
+		if err := readJSON(r, &in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		if in.Name != "" {
+			site.Name = in.Name
+		}
+		if in.Kind != "" {
+			site.Kind = in.Kind
+		}
+		if in.Address != "" || in.Name != "" {
+			site.Address = in.Address
+		}
+		if in.Timezone != "" {
+			site.Timezone = in.Timezone
+		}
+		if in.Latitude != nil {
+			site.Latitude = in.Latitude
+		}
+		if in.Longitude != nil {
+			site.Longitude = in.Longitude
+		}
+		if err := s.Store.UpdateSite(r.Context(), site); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "site.update", site.ID, site.Name)
+		s.Hub.Publish(u.OrganizationID, "site.updated", site)
+		writeJSON(w, 200, site)
+	case http.MethodDelete:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		if err := s.Store.DeleteSite(r.Context(), u.OrganizationID, id); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "site.delete", id, site.Name)
+		writeJSON(w, 200, map[string]string{"deleted": id})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
 func (s *Server) assets(w http.ResponseWriter, r *http.Request, u *model.User) {
 	switch r.Method {
 	case http.MethodGet:
@@ -240,6 +332,9 @@ func (s *Server) assets(w http.ResponseWriter, r *http.Request, u *model.User) {
 		}
 		writeJSON(w, 200, list)
 	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
 		var a model.Asset
 		if err := readJSON(r, &a); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "invalid json"})
@@ -277,12 +372,81 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 	if len(parts) == 1 && r.Method == http.MethodGet {
 		caps, _ := s.Store.ListCapabilities(r.Context(), a.ID)
 		obs, _ := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, "", 80)
-		writeJSON(w, 200, map[string]any{"asset": a, "capabilities": caps, "observations": obs})
+		ev, _ := s.Store.ListEventsForAsset(r.Context(), u.OrganizationID, a.ID, 40)
+		wos, _ := s.Store.ListWorkOrdersForAsset(r.Context(), u.OrganizationID, a.ID)
+		writeJSON(w, 200, map[string]any{"asset": a, "capabilities": caps, "observations": obs, "events": ev, "work_orders": wos})
+		return
+	}
+	if len(parts) == 1 && r.Method == http.MethodPatch {
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in model.Asset
+		if err := readJSON(r, &in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		if in.Name != "" {
+			a.Name = in.Name
+		}
+		if in.Kind != "" {
+			a.Kind = in.Kind
+		}
+		if in.Status != "" {
+			a.Status = in.Status
+		}
+		if in.Manufacturer != "" {
+			a.Manufacturer = in.Manufacturer
+		}
+		if in.Model != "" {
+			a.Model = in.Model
+		}
+		if in.Serial != "" {
+			a.Serial = in.Serial
+		}
+		if in.ExternalRef != "" {
+			a.ExternalRef = in.ExternalRef
+		}
+		if in.SiteID != nil {
+			a.SiteID = in.SiteID
+		}
+		if in.Latitude != nil {
+			a.Latitude = in.Latitude
+		}
+		if in.Longitude != nil {
+			a.Longitude = in.Longitude
+		}
+		if in.StaleAfterSec > 0 {
+			a.StaleAfterSec = in.StaleAfterSec
+		}
+		if in.Metadata != "" {
+			a.Metadata = in.Metadata
+		}
+		if err := s.Store.UpsertAsset(r.Context(), a); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.update", a.ID, a.Name)
+		s.Hub.Publish(u.OrganizationID, "asset.updated", a)
+		writeJSON(w, 200, a)
+		return
+	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		if !s.requireWrite(w, u) {
+			return
+		}
+		if err := s.Store.DeleteAsset(r.Context(), u.OrganizationID, id); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.delete", id, a.Name)
+		writeJSON(w, 200, map[string]string{"deleted": id})
 		return
 	}
 	if len(parts) >= 2 && parts[1] == "observations" {
 		cap := r.URL.Query().Get("capability")
-		obs, err := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, cap, 400)
+		limit := 400
+		obs, err := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, cap, limit)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
@@ -396,6 +560,9 @@ func (s *Server) workOrders(w http.ResponseWriter, r *http.Request, u *model.Use
 		}
 		writeJSON(w, 200, list)
 	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
 		var wo model.WorkOrder
 		if err := readJSON(r, &wo); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "invalid json"})
@@ -407,6 +574,10 @@ func (s *Server) workOrders(w http.ResponseWriter, r *http.Request, u *model.Use
 		}
 		if wo.Priority == "" {
 			wo.Priority = "normal"
+		}
+		if wo.Title == "" {
+			writeJSON(w, 400, map[string]string{"error": "title required"})
+			return
 		}
 		if err := s.Store.CreateWorkOrder(r.Context(), &wo); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -612,28 +783,123 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 }
 
 func (s *Server) automations(w http.ResponseWriter, r *http.Request, u *model.User) {
-	if r.Method == http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
 		list, err := s.Store.ListAutomations(r.Context(), u.OrganizationID)
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
 		writeJSON(w, 200, list)
-	} else if r.Method == http.MethodPatch {
-		var in struct {
-			ID      string `json:"id"`
-			Enabled *bool  `json:"enabled"`
-		}
-		if err := readJSON(r, &in); err != nil || in.ID == "" || in.Enabled == nil {
-			writeJSON(w, 400, map[string]string{"error": "id and enabled required"})
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
 			return
 		}
-		if err := s.Store.SetAutomationEnabled(r.Context(), u.OrganizationID, in.ID, *in.Enabled); err != nil {
+		var a model.Automation
+		if err := readJSON(r, &a); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		a.OrganizationID = u.OrganizationID
+		if a.Name == "" || a.Action == "" {
+			writeJSON(w, 400, map[string]string{"error": "name and action required"})
+			return
+		}
+		if a.TriggerKind == "" {
+			a.TriggerKind = "threshold"
+		}
+		if a.Config == "" {
+			a.Config = "{}"
+		}
+		a.Enabled = true
+		if err := s.Store.CreateAutomation(r.Context(), &a); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"id": in.ID, "enabled": *in.Enabled})
-	} else {
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "automation.create", a.ID, a.Name)
+		writeJSON(w, 201, a)
+	case http.MethodPatch:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in struct {
+			ID          string   `json:"id"`
+			Enabled     *bool    `json:"enabled"`
+			Name        *string  `json:"name"`
+			TriggerKind *string  `json:"trigger_kind"`
+			Capability  *string  `json:"capability"`
+			Operator    *string  `json:"operator"`
+			Threshold   *float64 `json:"threshold"`
+			Action      *string  `json:"action"`
+			Config      *string  `json:"config"`
+			Delete      bool     `json:"delete"`
+		}
+		if err := readJSON(r, &in); err != nil || in.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id required"})
+			return
+		}
+		if in.Delete {
+			if err := s.Store.DeleteAutomation(r.Context(), u.OrganizationID, in.ID); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, map[string]string{"deleted": in.ID})
+			return
+		}
+		list, err := s.Store.ListAutomations(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		var cur *model.Automation
+		for i := range list {
+			if list[i].ID == in.ID {
+				cur = &list[i]
+				break
+			}
+		}
+		if cur == nil {
+			writeJSON(w, 404, map[string]string{"error": "not found"})
+			return
+		}
+		if in.Enabled != nil && in.Name == nil && in.Action == nil && in.TriggerKind == nil && in.Capability == nil && in.Operator == nil && in.Threshold == nil && in.Config == nil {
+			if err := s.Store.SetAutomationEnabled(r.Context(), u.OrganizationID, in.ID, *in.Enabled); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, map[string]any{"id": in.ID, "enabled": *in.Enabled})
+			return
+		}
+		if in.Enabled != nil {
+			cur.Enabled = *in.Enabled
+		}
+		if in.Name != nil {
+			cur.Name = *in.Name
+		}
+		if in.TriggerKind != nil {
+			cur.TriggerKind = *in.TriggerKind
+		}
+		if in.Capability != nil {
+			cur.Capability = *in.Capability
+		}
+		if in.Operator != nil {
+			cur.Operator = *in.Operator
+		}
+		if in.Threshold != nil {
+			cur.Threshold = *in.Threshold
+		}
+		if in.Action != nil {
+			cur.Action = *in.Action
+		}
+		if in.Config != nil {
+			cur.Config = *in.Config
+		}
+		if err := s.Store.UpdateAutomation(r.Context(), cur); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, cur)
+	default:
 		writeJSON(w, 405, map[string]string{"error": "method"})
 	}
 }
@@ -732,6 +998,7 @@ func (s *Server) ingestObs(w http.ResponseWriter, r *http.Request, c *model.Conn
 			skipped++
 		}
 	}
+	s.metrics.inc(&s.metrics.ingestOK)
 	writeJSON(w, 202, map[string]int{"accepted": accepted, "duplicate_or_unknown": skipped})
 }
 

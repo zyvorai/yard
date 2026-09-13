@@ -165,14 +165,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS action_idem ON action_requests(organization_id
 CREATE TABLE IF NOT EXISTS automations (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
   trigger_kind TEXT NOT NULL, capability TEXT NOT NULL DEFAULT '', operator TEXT NOT NULL DEFAULT 'gt',
-  threshold REAL NOT NULL DEFAULT 0, action TEXT NOT NULL, created_at TEXT NOT NULL
+  threshold REAL NOT NULL DEFAULT 0, action TEXT NOT NULL, config TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL,
   object TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
 );
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	// Best-effort upgrade for DBs created before config column.
+	_, _ = s.DB.Exec(`ALTER TABLE automations ADD COLUMN config TEXT NOT NULL DEFAULT '{}'`)
+	return nil
 }
 
 func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
@@ -954,13 +959,16 @@ func (s *Store) CreateAutomation(ctx context.Context, a *model.Automation) error
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now().UTC()
 	}
-	_, err := s.exec(ctx, `INSERT INTO automations(id,organization_id,name,enabled,trigger_kind,capability,operator,threshold,action,created_at)
-VALUES(?,?,?,?,?,?,?,?,?,?)`, a.ID, a.OrganizationID, a.Name, boolInt(a.Enabled), a.TriggerKind, a.Capability, a.Operator, a.Threshold, a.Action, a.CreatedAt.Format(time.RFC3339Nano))
+	if a.Config == "" {
+		a.Config = "{}"
+	}
+	_, err := s.exec(ctx, `INSERT INTO automations(id,organization_id,name,enabled,trigger_kind,capability,operator,threshold,action,config,created_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.OrganizationID, a.Name, boolInt(a.Enabled), a.TriggerKind, a.Capability, a.Operator, a.Threshold, a.Action, a.Config, a.CreatedAt.Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *Store) ListAutomations(ctx context.Context, orgID string) ([]model.Automation, error) {
-	rows, err := s.query(ctx, `SELECT id,organization_id,name,enabled,trigger_kind,capability,operator,threshold,action,created_at FROM automations WHERE organization_id=? ORDER BY name`, orgID)
+	rows, err := s.query(ctx, `SELECT id,organization_id,name,enabled,trigger_kind,capability,operator,threshold,action,COALESCE(config,'{}'),created_at FROM automations WHERE organization_id=? ORDER BY name`, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -970,7 +978,7 @@ func (s *Store) ListAutomations(ctx context.Context, orgID string) ([]model.Auto
 		var a model.Automation
 		var en int
 		var created string
-		if err := rows.Scan(&a.ID, &a.OrganizationID, &a.Name, &en, &a.TriggerKind, &a.Capability, &a.Operator, &a.Threshold, &a.Action, &created); err != nil {
+		if err := rows.Scan(&a.ID, &a.OrganizationID, &a.Name, &en, &a.TriggerKind, &a.Capability, &a.Operator, &a.Threshold, &a.Action, &a.Config, &created); err != nil {
 			return nil, err
 		}
 		a.Enabled = en == 1
@@ -986,6 +994,114 @@ func (s *Store) ListAutomations(ctx context.Context, orgID string) ([]model.Auto
 func (s *Store) SetAutomationEnabled(ctx context.Context, orgID, id string, enabled bool) error {
 	_, err := s.exec(ctx, `UPDATE automations SET enabled=? WHERE organization_id=? AND id=?`, boolInt(enabled), orgID, id)
 	return err
+}
+
+func (s *Store) UpdateAutomation(ctx context.Context, a *model.Automation) error {
+	if a.Config == "" {
+		a.Config = "{}"
+	}
+	_, err := s.exec(ctx, `UPDATE automations SET name=?, enabled=?, trigger_kind=?, capability=?, operator=?, threshold=?, action=?, config=? WHERE organization_id=? AND id=?`,
+		a.Name, boolInt(a.Enabled), a.TriggerKind, a.Capability, a.Operator, a.Threshold, a.Action, a.Config, a.OrganizationID, a.ID)
+	return err
+}
+
+func (s *Store) DeleteAutomation(ctx context.Context, orgID, id string) error {
+	_, err := s.exec(ctx, `DELETE FROM automations WHERE organization_id=? AND id=?`, orgID, id)
+	return err
+}
+
+func (s *Store) UpdateSite(ctx context.Context, site *model.Site) error {
+	_, err := s.exec(ctx, `UPDATE sites SET name=?, kind=?, address=?, latitude=?, longitude=?, timezone=? WHERE organization_id=? AND id=?`,
+		site.Name, site.Kind, site.Address, site.Latitude, site.Longitude, site.Timezone, site.OrganizationID, site.ID)
+	return err
+}
+
+func (s *Store) SiteByID(ctx context.Context, orgID, id string) (*model.Site, error) {
+	row := s.queryRow(ctx, `SELECT id,organization_id,name,kind,address,latitude,longitude,timezone,created_at FROM sites WHERE organization_id=? AND id=?`, orgID, id)
+	var st model.Site
+	var created string
+	var lat, lng sql.NullFloat64
+	if err := row.Scan(&st.ID, &st.OrganizationID, &st.Name, &st.Kind, &st.Address, &lat, &lng, &st.Timezone, &created); err != nil {
+		return nil, err
+	}
+	st.Latitude, st.Longitude = nullF(lat), nullF(lng)
+	st.CreatedAt = parseTime(created)
+	return &st, nil
+}
+
+func (s *Store) DeleteSite(ctx context.Context, orgID, id string) error {
+	_, err := s.exec(ctx, `DELETE FROM sites WHERE organization_id=? AND id=?`, orgID, id)
+	return err
+}
+
+func (s *Store) DeleteAsset(ctx context.Context, orgID, id string) error {
+	_, _ = s.exec(ctx, `DELETE FROM capabilities WHERE asset_id=?`, id)
+	_, err := s.exec(ctx, `DELETE FROM assets WHERE organization_id=? AND id=?`, orgID, id)
+	return err
+}
+
+func (s *Store) ListOrgIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.query(ctx, `SELECT id FROM organizations`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListEventsForAsset(ctx context.Context, orgID, assetID string, limit int) ([]model.Event, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.query(ctx, `SELECT id,organization_id,asset_id,site_id,kind,severity,title,body,dedupe_key,created_at FROM events WHERE organization_id=? AND asset_id=? ORDER BY created_at DESC LIMIT ?`, orgID, assetID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Event
+	for rows.Next() {
+		var e model.Event
+		var asset, site sql.NullString
+		var created string
+		if err := rows.Scan(&e.ID, &e.OrganizationID, &asset, &site, &e.Kind, &e.Severity, &e.Title, &e.Body, &e.DedupeKey, &created); err != nil {
+			return nil, err
+		}
+		e.AssetID, e.SiteID = nullS(asset), nullS(site)
+		e.CreatedAt = parseTime(created)
+		out = append(out, e)
+	}
+	if out == nil {
+		out = []model.Event{}
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListWorkOrdersForAsset(ctx context.Context, orgID, assetID string) ([]model.WorkOrder, error) {
+	rows, err := s.query(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,due_at,created_at,updated_at FROM work_orders WHERE organization_id=? AND asset_id=? ORDER BY created_at DESC LIMIT 100`, orgID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.WorkOrder
+	for rows.Next() {
+		wo, err := scanWO(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *wo)
+	}
+	if out == nil {
+		out = []model.WorkOrder{}
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) Audit(ctx context.Context, orgID, actor, action, object, detail string) error {

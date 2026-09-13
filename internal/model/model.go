@@ -168,6 +168,7 @@ type Automation struct {
 	Operator       string    `json:"operator"`
 	Threshold      float64   `json:"threshold"`
 	Action         string    `json:"action"`
+	Config         string    `json:"config"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
