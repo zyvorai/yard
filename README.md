@@ -2,13 +2,15 @@
 
 **Open asset and operations platform.** Apache-2.0.
 
+**Docs:** [https://zyvorai.github.io/yard/](https://zyvorai.github.io/yard/) ·
+[Connectors](docs/CONNECTORS.md) ·
+[OpenAPI](openapi.yaml) ·
+[Roadmap](docs/ROADMAP.md)
+
 Yard is a standalone registry for physical operations: devices, vehicles,
 machines, sensors, sites, telemetry, incidents, and work orders. Zyvor
 products plug in as optional connectors. You can install Yard without
 installing anything else in the Zyvor suite.
-
-This is an original implementation. It is not a fork of Fleetbase
-(AGPL-3.0) and contains no Fleetbase source.
 
 ## Why it exists
 
@@ -163,8 +165,9 @@ health → incident → work order → resolve workflow.
 
 ## Roadmap
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full feature catalog and the
-locked Next epics (live ops loop, then registry completeness).
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full feature catalog.
+Product docs and the gallery live at
+[zyvorai.github.io/yard](https://zyvorai.github.io/yard/).
 
 ## License
 
