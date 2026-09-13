@@ -80,7 +80,7 @@ export default function Integrations() {
           return (
             <div className="card" key={c.id}>
               <h2>{c.kind}</h2>
-              <div style={{ fontSize: 18, fontWeight: 650 }}>{c.name}</div>
+              <div className="card-title">{c.name}</div>
               <p>
                 <span className={`pill ${c.status === "connected" ? "ok" : c.status === "available" ? "info" : "stale"}`}>{c.status}</span>
               </p>
