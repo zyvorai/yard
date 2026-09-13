@@ -29,6 +29,8 @@ make sim
 ## Pull requests
 
 Include tests for ingest, tenant isolation, workflow, or policy changes.
-Keep the console system-font based (no CDN fonts) and reserve orange for
-primary actions. Update `docs/ROADMAP.md` and the Docusaurus site under
-`website/docs/` when you ship user-visible features.
+Keep the console system-font based (self-hosted Inter as the non-Apple
+fallback, no CDN fonts); use Apple-blue for primary actions and reserve
+orange for the Zyvor brand mark only. Update `docs/ROADMAP.md` and the
+Docusaurus site under `website/docs/` when you ship user-visible
+features.
