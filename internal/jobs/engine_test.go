@@ -2,12 +2,31 @@ package jobs
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/zyvorai/yard/internal/model"
 	"github.com/zyvorai/yard/internal/store"
 )
+
+// redirectTransport rewrites every outbound request's scheme/host to a local
+// test server, regardless of the URL the code under test dialed — used to
+// exercise firePagerDuty's hardcoded events.pagerduty.com endpoint without a
+// real PagerDuty account.
+type redirectTransport struct{ target *url.URL }
+
+func (t redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.URL.Scheme = t.target.Scheme
+	req.URL.Host = t.target.Host
+	return http.DefaultTransport.RoundTrip(req)
+}
 
 func setup(t *testing.T) (*store.Store, *Engine, string, string) {
 	t.Helper()
@@ -137,6 +156,99 @@ func TestCapabilityMaxAlarmOpensIncident(t *testing.T) {
 	}
 	if len(incs) != 1 {
 		t.Fatalf("expected still 1 open incident after an in-range value, got %d", len(incs))
+	}
+}
+
+func TestSlackAndPagerDutyActionsPost(t *testing.T) {
+	type call struct{ path, body string }
+	var calls []call
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		calls = append(calls, call{r.URL.Path, string(b)})
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+	srvURL, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := store.Open("file:" + t.Name() + "?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	org, err := st.CreateOrganization(ctx, "Ops", "ops")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &model.Asset{OrganizationID: org.ID, Name: "Thermal load", ExternalRef: "SIM-TEMP-B", Kind: "equipment"}
+	if err := st.UpsertAsset(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAutomation(ctx, &model.Automation{
+		OrganizationID: org.ID, Name: "Slack alert", Enabled: true,
+		TriggerKind: "threshold", Capability: "temperature", Operator: "gt", Threshold: 50,
+		Action: "slack", Config: fmt.Sprintf(`{"slack_url":"%s/slack"}`, srv.URL),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAutomation(ctx, &model.Automation{
+		OrganizationID: org.ID, Name: "Page on-call", Enabled: true,
+		TriggerKind: "threshold", Capability: "temperature", Operator: "gt", Threshold: 50,
+		Action: "pagerduty", Config: `{"routing_key":"test-key"}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{Store: st, HTTP: &http.Client{Transport: redirectTransport{target: srvURL}}}
+
+	_, ok, err := eng.IngestObservation(ctx, org.ID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-B", Capability: "temperature", Value: 90, Unit: "°C",
+		ObservedAt: time.Now().UTC(), DedupeKey: "x",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("ingest: %v %v", err, ok)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 outbound calls (slack + pagerduty), got %d: %+v", len(calls), calls)
+	}
+	var sawSlack, sawPagerDuty bool
+	for _, c := range calls {
+		switch c.path {
+		case "/slack":
+			sawSlack = true
+			if !strings.Contains(c.body, `"text"`) {
+				t.Errorf("slack payload missing text field: %s", c.body)
+			}
+		case "/v2/enqueue":
+			sawPagerDuty = true
+			if !strings.Contains(c.body, "test-key") || !strings.Contains(c.body, `"trigger"`) {
+				t.Errorf("pagerduty payload missing routing_key/trigger: %s", c.body)
+			}
+		default:
+			t.Errorf("unexpected call path %q", c.path)
+		}
+	}
+	if !sawSlack || !sawPagerDuty {
+		t.Fatalf("expected both slack and pagerduty calls, got %+v", calls)
+	}
+
+	audit, err := st.ListAudit(ctx, org.ID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawSlackAudit, sawPagerDutyAudit bool
+	for _, e := range audit {
+		if e.Action == "slack" {
+			sawSlackAudit = true
+		}
+		if e.Action == "pagerduty" {
+			sawPagerDutyAudit = true
+		}
+	}
+	if !sawSlackAudit || !sawPagerDutyAudit {
+		t.Fatalf("expected audit entries for slack and pagerduty, got %+v", audit)
 	}
 }
 

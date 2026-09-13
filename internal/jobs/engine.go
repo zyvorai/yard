@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/smtp"
+	"os"
 	"strings"
 	"time"
 
@@ -226,9 +228,19 @@ func (e *Engine) applyAutomations(ctx context.Context, orgID string, asset *mode
 }
 
 func (e *Engine) runAutomationAction(ctx context.Context, orgID string, asset *model.Asset, a model.Automation, obs *model.Observation) error {
-	switch a.Action {
-	case "open_incident":
+	if a.Action == "open_incident" {
 		return e.openIncident(ctx, orgID, asset, a, obs)
+	}
+	return e.actionDispatch(ctx, orgID, asset, a, obs)
+}
+
+// actionDispatch fires every non-incident automation action (notify, webhook,
+// email, slack, pagerduty) for both the threshold/capability trigger path
+// (runAutomationAction, above) and the stale trigger path (MarkStale, below)
+// — incident-opening stays separate in each since threshold and stale
+// incidents have different title/dedupe/summary shapes.
+func (e *Engine) actionDispatch(ctx context.Context, orgID string, asset *model.Asset, a model.Automation, obs *model.Observation) error {
+	switch a.Action {
 	case "notify":
 		e.publish(orgID, "automation.notify", map[string]any{
 			"automation": a.Name, "asset": asset.Name, "capability": obs.Capability, "value": obs.Value,
@@ -237,31 +249,35 @@ func (e *Engine) runAutomationAction(ctx context.Context, orgID string, asset *m
 		return nil
 	case "webhook":
 		return e.fireWebhook(ctx, orgID, asset, a, obs)
+	case "email":
+		return e.sendEmail(ctx, orgID, asset, a, obs)
+	case "slack":
+		return e.fireSlack(ctx, orgID, asset, a, obs)
+	case "pagerduty":
+		return e.firePagerDuty(ctx, orgID, asset, a, obs)
 	default:
 		return nil
 	}
 }
 
-func (e *Engine) fireWebhook(ctx context.Context, orgID string, asset *model.Asset, a model.Automation, obs *model.Observation) error {
-	url := ""
-	var cfg map[string]any
-	if json.Unmarshal([]byte(a.Config), &cfg) == nil {
-		if u, ok := cfg["url"].(string); ok {
-			url = u
-		}
+// configString reads a single string field out of an Automation.Config JSON
+// blob, returning "" if the field is absent or the blob doesn't parse.
+func configString(cfg, key string) string {
+	var m map[string]any
+	if json.Unmarshal([]byte(cfg), &m) != nil {
+		return ""
 	}
-	if url == "" {
-		return nil
-	}
-	body, _ := json.Marshal(map[string]any{
-		"automation": a.Name,
-		"asset_id":   asset.ID,
-		"asset_name": asset.Name,
-		"capability": obs.Capability,
-		"value":      obs.Value,
-		"unit":       obs.Unit,
-		"observed_at": obs.ObservedAt,
-	})
+	v, _ := m[key].(string)
+	return v
+}
+
+// postJSON POSTs a JSON payload to url and records an audit entry. Transport
+// errors are logged and swallowed — a notification delivery failure must
+// never fail the automation run that triggered it. Shared by fireWebhook,
+// fireSlack, and firePagerDuty: what distinguishes them is the target URL
+// and payload shape, not the delivery mechanism.
+func (e *Engine) postJSON(ctx context.Context, orgID, automationID, assetID, kind, url string, payload any) error {
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -271,12 +287,102 @@ func (e *Engine) fireWebhook(ctx context.Context, orgID string, asset *model.Ass
 	resp, err := e.client().Do(req)
 	if err != nil {
 		if e.Log != nil {
-			e.Log.Error("webhook", "url", url, "err", err)
+			e.Log.Error(kind, "url", url, "err", err)
 		}
 		return nil
 	}
 	defer resp.Body.Close()
-	_ = e.Store.Audit(ctx, orgID, "automation:"+a.ID, "webhook", asset.ID, fmt.Sprintf("%s → %d", url, resp.StatusCode))
+	_ = e.Store.Audit(ctx, orgID, "automation:"+automationID, kind, assetID, fmt.Sprintf("%s → %d", url, resp.StatusCode))
+	return nil
+}
+
+func (e *Engine) fireWebhook(ctx context.Context, orgID string, asset *model.Asset, a model.Automation, obs *model.Observation) error {
+	url := configString(a.Config, "url")
+	if url == "" {
+		return nil
+	}
+	payload := map[string]any{
+		"automation": a.Name, "asset_id": asset.ID, "asset_name": asset.Name,
+		"capability": obs.Capability, "value": obs.Value, "unit": obs.Unit, "observed_at": obs.ObservedAt,
+	}
+	return e.postJSON(ctx, orgID, a.ID, asset.ID, "webhook", url, payload)
+}
+
+// fireSlack posts to a Slack incoming-webhook URL (config key "slack_url").
+// Unverified against a real Slack workspace — no account available to test
+// delivery against; validate with real credentials before relying on it.
+func (e *Engine) fireSlack(ctx context.Context, orgID string, asset *model.Asset, a model.Automation, obs *model.Observation) error {
+	url := configString(a.Config, "slack_url")
+	if url == "" {
+		return nil
+	}
+	text := fmt.Sprintf("*%s* on %s — %s = %v%s", a.Name, asset.Name, obs.Capability, obs.Value, obs.Unit)
+	return e.postJSON(ctx, orgID, a.ID, asset.ID, "slack", url, map[string]any{"text": text})
+}
+
+// firePagerDuty sends a PagerDuty Events API v2 trigger event (config key
+// "routing_key"). Unverified against a real PagerDuty account — no account
+// available to test delivery against; validate with real credentials
+// before relying on it.
+func (e *Engine) firePagerDuty(ctx context.Context, orgID string, asset *model.Asset, a model.Automation, obs *model.Observation) error {
+	routingKey := configString(a.Config, "routing_key")
+	if routingKey == "" {
+		return nil
+	}
+	payload := map[string]any{
+		"routing_key":  routingKey,
+		"event_action": "trigger",
+		"dedup_key":    "automation:" + a.ID + ":" + asset.ID,
+		"payload": map[string]any{
+			"summary":  fmt.Sprintf("%s on %s", a.Name, asset.Name),
+			"source":   asset.Name,
+			"severity": "warning",
+			"custom_details": map[string]any{
+				"capability": obs.Capability, "value": obs.Value, "unit": obs.Unit,
+			},
+		},
+	}
+	return e.postJSON(ctx, orgID, a.ID, asset.ID, "pagerduty", "https://events.pagerduty.com/v2/enqueue", payload)
+}
+
+// sendEmail sends a plain-text notification via SMTP. The recipient comes
+// from the automation's own config (key "to"); the SMTP server itself is a
+// server-wide setting via YARD_SMTP_HOST/PORT/USER/PASS/FROM (same
+// env-var-configured-integration convention as the ingest token fallback in
+// internal/connectors/dispatch.go), since a mail relay is operator
+// infrastructure, not a per-rule credential. Unverified against a real SMTP
+// account — no account available to test delivery against; validate with
+// real credentials before relying on it.
+func (e *Engine) sendEmail(ctx context.Context, orgID string, asset *model.Asset, a model.Automation, obs *model.Observation) error {
+	to := configString(a.Config, "to")
+	host := os.Getenv("YARD_SMTP_HOST")
+	if to == "" || host == "" {
+		return nil
+	}
+	port := os.Getenv("YARD_SMTP_PORT")
+	if port == "" {
+		port = "587"
+	}
+	from := os.Getenv("YARD_SMTP_FROM")
+	if from == "" {
+		from = "yard@localhost"
+	}
+	subject := fmt.Sprintf("[Yard] %s on %s", a.Name, asset.Name)
+	body := fmt.Sprintf("%s\r\n\r\nAsset: %s\r\nCapability: %s\r\nValue: %v %s\r\nObserved at: %s\r\n",
+		a.Name, asset.Name, obs.Capability, obs.Value, obs.Unit, obs.ObservedAt.Format(time.RFC3339))
+	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s", from, to, subject, body))
+
+	var auth smtp.Auth
+	if user := os.Getenv("YARD_SMTP_USER"); user != "" {
+		auth = smtp.PlainAuth("", user, os.Getenv("YARD_SMTP_PASS"), host)
+	}
+	if err := smtp.SendMail(host+":"+port, auth, from, []string{to}, msg); err != nil {
+		if e.Log != nil {
+			e.Log.Error("email", "to", to, "err", err)
+		}
+		return nil
+	}
+	_ = e.Store.Audit(ctx, orgID, "automation:"+a.ID, "email", asset.ID, "sent to "+to)
 	return nil
 }
 
@@ -414,10 +520,8 @@ func (e *Engine) MarkStale(ctx context.Context, orgID string) error {
 					Title: title, Body: inc.Summary, DedupeKey: "stale:" + asset.ID,
 				})
 				e.publish(orgID, "incident.opened", inc)
-			case "notify":
-				e.publish(orgID, "automation.notify", map[string]any{"automation": a.Name, "asset": asset.Name, "reason": "stale"})
-			case "webhook":
-				_ = e.fireWebhook(ctx, orgID, &asset, a, &model.Observation{Capability: "heartbeat", Value: 0})
+			default:
+				_ = e.actionDispatch(ctx, orgID, &asset, a, &model.Observation{Capability: "heartbeat", Value: 0})
 			}
 		}
 	}

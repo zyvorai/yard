@@ -103,6 +103,15 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Flush forwards to the underlying ResponseWriter's Flusher so wrapping it
+// for request logging doesn't break SSE (internal/api's stream handler
+// type-asserts http.Flusher and 500s if it's missing).
+func (r *statusRecorder) Flush() {
+	if fl, ok := r.ResponseWriter.(http.Flusher); ok {
+		fl.Flush()
+	}
+}
+
 // requestLog logs one structured line per request (method, path, status,
 // duration) via the server's slog.Logger.
 func (s *Server) requestLog(next http.Handler) http.Handler {

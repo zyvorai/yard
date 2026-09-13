@@ -180,4 +180,5 @@ export type Automation = {
   operator: string;
   threshold: number;
   action: string;
+  config: string;
 };

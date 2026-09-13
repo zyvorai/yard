@@ -313,3 +313,50 @@ func TestIngestInventoryRejectsOutOfRangeLatLng(t *testing.T) {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
 	}
 }
+
+// TestStreamSupportsFlushThroughMiddleware guards against a real regression:
+// wrapping the ResponseWriter for request logging (requestLog/statusRecorder
+// in Handler()) must still satisfy http.Flusher, since the stream handler
+// type-asserts it and returns 500 outright if the assertion fails. A test
+// against the handler function directly (bypassing Handler()'s middleware
+// chain) would not have caught this.
+func TestStreamSupportsFlushThroughMiddleware(t *testing.T) {
+	st, err := store.Open("file:api-test-stream?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := seed.Bootstrap(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(New(st, nil).Handler())
+	defer ts.Close()
+
+	body, _ := json.Marshal(map[string]string{"email": seed.DemoEmail, "password": seed.DemoPassword})
+	resp, err := http.Post(ts.URL+"/api/v1/auth/login", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var login struct{ Token string }
+	_ = json.NewDecoder(resp.Body).Decode(&login)
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/stream", nil)
+	req.Header.Set("Authorization", "Bearer "+login.Token)
+	sresp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sresp.Body.Close()
+	if sresp.StatusCode != 200 {
+		t.Fatalf("expected 200 from /api/v1/stream, got %d", sresp.StatusCode)
+	}
+	want := "event: ready\ndata: {}\n\n"
+	buf := make([]byte, len(want))
+	if _, err := io.ReadFull(sresp.Body, buf); err != nil {
+		t.Fatalf("reading initial SSE event: %v", err)
+	}
+	if string(buf) != want {
+		t.Fatalf("unexpected initial SSE event: %q", buf)
+	}
+}
