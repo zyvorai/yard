@@ -217,13 +217,18 @@ h1 { font-size: 28px; letter-spacing: -0.035em; margin: 0; font-weight: 650; }
   padding: 18px 18px 16px; box-shadow: 0 1px 0 rgba(255,255,255,0.04);
 }
 .card h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+.card-title { font-size: 20px; font-weight: 650; letter-spacing: -0.015em; }
 .metric { font-size: 32px; letter-spacing: -0.04em; font-weight: 640; }
 .metric small { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 6px; }
 
 .table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-td { padding: 11px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th {
+  text-align: left; color: var(--faint); font-weight: 650; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 8px 10px; border-bottom: 1px solid var(--line);
+}
+td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 tr:hover td { background: var(--nav-hover); }
 tr.selected td { background: var(--accent-soft); }
 

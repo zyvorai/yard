@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, Incident, WorkOrder } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
+import { GroupedList, GroupedRow } from "../components/GroupedList";
 
 export default function Incidents() {
   const [rows, setRows] = useState<Incident[]>([]);
@@ -56,7 +57,11 @@ export default function Incidents() {
             <>
               <h1 style={{ fontSize: 22 }}>{sel.title}</h1>
               <p className="lede">{sel.summary}</p>
-              <p><Health value={sel.severity} /> {sel.status} · {sel.owner || "unassigned"}</p>
+              <GroupedList>
+                <GroupedRow label="Severity" trailing={<Health value={sel.severity} />} />
+                <GroupedRow label="Status" trailing={sel.status} />
+                <GroupedRow label="Owner" trailing={sel.owner || "Unassigned"} />
+              </GroupedList>
               {sel.runbook && (
                 <div style={{ marginTop: 12 }}>
                   <h2 style={{ fontSize: 15, marginBottom: 6 }}>Runbook</h2>

@@ -184,26 +184,28 @@ export default function Admin() {
             {editingId && <button className="btn ghost" type="button" onClick={cancelEdit}>Cancel</button>}
           </div>
         </form>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Match</th><th>Severity</th><th>Priority</th><th></th></tr></thead>
-            <tbody>
-              {policies.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.name}</td>
-                  <td><code>{p.match_kind}{p.match_value ? `:${p.match_value}` : ""}</code></td>
-                  <td><Health value={p.severity} /></td>
-                  <td>{p.priority}</td>
-                  <td className="row-actions">
+        {policies.length ? (
+          <GroupedList>
+            {policies.map((p) => (
+              <GroupedRow
+                key={p.id}
+                tone={p.severity === "critical" ? "bad" : p.severity === "warning" ? "warn" : "info"}
+                icon="●"
+                label={p.name}
+                description={`${p.match_kind}${p.match_value ? `:${p.match_value}` : ""} · priority ${p.priority}`}
+                trailing={
+                  <>
+                    <Health value={p.severity} />
                     <button type="button" className="btn small ghost" onClick={() => startEdit(p)}>Edit</button>
                     <button type="button" className="btn small ghost" onClick={() => removePolicy(p)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!policies.length && <p className="empty">No policies yet — defaults are seeded on bootstrap.</p>}
-        </div>
+                  </>
+                }
+              />
+            ))}
+          </GroupedList>
+        ) : (
+          <p className="empty">No policies yet — defaults are seeded on bootstrap.</p>
+        )}
       </div>
 
       <div style={{ marginBottom: 16 }}>

@@ -135,7 +135,7 @@ export default function Sites() {
         {rows.map((s) => (
           <div className="card" key={s.id}>
             <h2>{s.kind}</h2>
-            <div style={{ fontSize: 20, fontWeight: 650 }}>{s.name}</div>
+            <div className="card-title">{s.name}</div>
             <p className="lede">{s.address || "No address"}</p>
             {(s.latitude != null && s.longitude != null) && (
               <p className="lede">{s.latitude.toFixed(4)}, {s.longitude.toFixed(4)}</p>
