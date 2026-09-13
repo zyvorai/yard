@@ -11,6 +11,8 @@ coverage.html
 web/node_modules/
 web/dist/
 web/.vite/
+sdk/ts/node_modules/
+sdk/ts/dist/
 
 # Env & secrets
 .env

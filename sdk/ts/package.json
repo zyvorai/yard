@@ -1,0 +1,16 @@
+{
+  "name": "@zyvorai/yard-client",
+  "version": "0.1.0",
+  "description": "Thin, hand-authored TypeScript client for the Yard API",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/client.js",
+  "types": "dist/client.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

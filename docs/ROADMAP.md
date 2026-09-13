@@ -146,7 +146,7 @@ flowchart TD
 | OTA campaign list / update delegate (display) | Later |
 | MQTT adapter → HTTP ingest | Later |
 | Webhook egress (Yard → customer systems) | Have |
-| Complete OpenAPI + SDKs | Have (OpenAPI) / Next (SDKs) |
+| Complete OpenAPI + SDKs | Have (full route/schema coverage; hand-authored Go + TypeScript clients in `sdk/`) |
 | OPC-UA / Modbus | Boundary (Nodra) |
 | SAP / Maximo / ServiceNow sync | Later |
 | OAuth / mTLS for connectors | Later |

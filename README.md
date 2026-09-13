@@ -158,6 +158,7 @@ docs/CONNECTORS.md     ingest and connector contracts
 docs/ux/               live lab screenshots
 docs/social/           share / OG card
 openapi.yaml           OpenAPI 3.0
+sdk/go, sdk/ts         thin Go and TypeScript API clients
 scripts/ship           remote lab deploy (Fabric-style)
 scripts/backup.sh      SQLite/Postgres backup
 scripts/restore.sh     restore a scripts/backup.sh snapshot
@@ -280,6 +281,7 @@ Or `make test`. Release gates cover tenant isolation, connector authentication, 
 | Feature catalog | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | Connectors | [docs/CONNECTORS.md](docs/CONNECTORS.md) |
 | OpenAPI | [openapi.yaml](openapi.yaml) |
+| SDKs | [sdk/](sdk/) — Go and TypeScript |
 | Security | [SECURITY.md](SECURITY.md) · [docs site](https://zyvorai.github.io/yard/docs/security) |
 
 Shipped epics include live ops (SSE + stale ticker), registry completeness, and Epic 3: bulk CSV/JSON, map clustering, and severity runbooks.

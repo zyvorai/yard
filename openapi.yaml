@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Yard API
-  version: 0.2.0
+  version: 0.3.0
   description: Open asset and operations platform
   license:
     name: Apache-2.0
@@ -10,24 +10,28 @@ servers:
 paths:
   /healthz:
     get:
+      security: []
       summary: Liveness
       responses:
         "200":
           description: ok
   /readyz:
     get:
+      security: []
       summary: Readiness
       responses:
         "200":
           description: ready
   /metrics:
     get:
+      security: []
       summary: Prometheus-style counters
       responses:
         "200":
           description: text exposition
   /api/v1/auth/login:
     post:
+      security: []
       summary: Create session
       requestBody:
         required: true
@@ -42,24 +46,222 @@ paths:
       responses:
         "200":
           description: session token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+        "401":
+          description: invalid credentials or deactivated account
   /api/v1/auth/me:
     get:
       security: [{ bearerAuth: [] }]
       responses:
         "200":
           description: current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+  /api/v1/auth/accept-invite:
+    post:
+      security: []
+      summary: Set a password for an admin-invited user and sign in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: session token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+        "401":
+          description: invalid or expired invite token
+  /api/v1/auth/request-reset:
+    post:
+      security: []
+      summary: Request a password-reset link (always 200; does not reveal whether the email exists)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "200":
+          description: ok (reset link, if the account exists, is logged server-side)
+  /api/v1/auth/reset:
+    post:
+      security: []
+      summary: Set a new password using a reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: ok
+        "401":
+          description: invalid or expired reset token
+  /api/v1/admin/users:
+    get:
+      summary: List users in the organization (admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        "403":
+          description: admin role required
+    post:
+      summary: Invite a new user (admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+                display_name: { type: string }
+                role: { type: string, enum: [viewer, operator, admin], default: viewer }
+      responses:
+        "201":
+          description: created; invite_token is shown once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/User" }
+                  invite_token: { type: string }
+    patch:
+      summary: Change a user's role or active state (admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
+                role: { type: string, enum: [viewer, operator, admin] }
+                active: { type: boolean }
+      responses:
+        "200":
+          description: ok
+  /api/v1/api-keys:
+    get:
+      summary: List the current user's own API keys
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: keys (hint only — the raw token is never shown again)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/APIKey" }
+    post:
+      summary: Create an API key for the current user
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201":
+          description: created; token is shown once
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_key: { $ref: "#/components/schemas/APIKey" }
+                  token: { type: string }
+    patch:
+      summary: Revoke one of the current user's own API keys
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, delete]
+              properties:
+                id: { type: string }
+                delete: { type: boolean }
+      responses:
+        "200":
+          description: ok
   /api/v1/overview:
     get:
       security: [{ bearerAuth: [] }]
       responses:
         "200":
           description: workspace snapshot
+  /api/v1/onboarding:
+    get:
+      summary: Guided first-run checklist state
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: onboarding step status
+  /api/v1/geocode:
+    get:
+      summary: Address search proxy (OpenStreetMap Nominatim), rate-limited
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: candidate locations
+        "400":
+          description: q required
+        "429":
+          description: rate limited
   /api/v1/sites:
     get:
       security: [{ bearerAuth: [] }]
       responses:
         "200":
           description: sites
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Site" }
     post:
       security: [{ bearerAuth: [] }]
       responses:
@@ -102,6 +304,11 @@ paths:
       responses:
         "200":
           description: assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Asset" }
     post:
       security: [{ bearerAuth: [] }]
       responses:
@@ -118,6 +325,22 @@ paths:
       responses:
         "200":
           description: asset detail with capabilities, observations, events, work orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  asset: { $ref: "#/components/schemas/Asset" }
+                  capabilities:
+                    type: array
+                    items: { $ref: "#/components/schemas/Capability" }
+                  observations:
+                    type: array
+                    items: { $ref: "#/components/schemas/Observation" }
+                  events: { type: array, items: {} }
+                  work_orders:
+                    type: array
+                    items: { $ref: "#/components/schemas/WorkOrder" }
     patch:
       security: [{ bearerAuth: [] }]
       responses:
@@ -128,6 +351,71 @@ paths:
       responses:
         "200":
           description: deleted
+  /api/v1/assets/{id}/capabilities:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: capabilities
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Capability" }
+    put:
+      summary: Replace an asset's capability set
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: "#/components/schemas/Capability" }
+      responses:
+        "200":
+          description: replaced
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Capability" }
+  /api/v1/assets/{id}/observations:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      summary: Observation history for one asset, optionally scoped to one capability and time range
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: capability
+          schema: { type: string }
+        - in: query
+          name: from
+          description: RFC3339 lower bound (inclusive) on observed_at
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          description: RFC3339 upper bound (inclusive) on observed_at
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: observations, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Observation" }
+        "400":
+          description: invalid from/to
   /api/v1/assets/export:
     get:
       security: [{ bearerAuth: [] }]
@@ -159,10 +447,16 @@ paths:
           description: import result with created/updated counts
   /api/v1/telemetry:
     get:
+      summary: Latest value per (asset, capability) across the organization
       security: [{ bearerAuth: [] }]
       responses:
         "200":
           description: latest points
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TelemetryPoint" }
   /api/v1/events:
     get:
       security: [{ bearerAuth: [] }]
@@ -172,36 +466,116 @@ paths:
   /api/v1/incidents:
     get:
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
       responses:
         "200":
           description: incidents
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Incident" }
     post:
       security: [{ bearerAuth: [] }]
       responses:
         "201":
           description: created
+  /api/v1/incidents/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: incident
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+    patch:
+      summary: Update status/owner/resolution/summary
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
+  /api/v1/incidents/{id}/resolve:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    patch:
+      summary: Shorthand for PATCH .../incidents/{id} with status=resolved
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: resolved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Incident" }
   /api/v1/work-orders:
     get:
       security: [{ bearerAuth: [] }]
       responses:
         "200":
           description: work orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkOrder" }
     post:
       security: [{ bearerAuth: [] }]
       responses:
         "201":
           description: created
+  /api/v1/work-orders/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: work order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkOrder" }
+    patch:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkOrder" }
   /api/v1/connectors:
     get:
       security: [{ bearerAuth: [] }]
       responses:
         "200":
           description: connectors
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Connector" }
     patch:
+      summary: Update a connector, optionally rotating its token
       security: [{ bearerAuth: [] }]
       responses:
         "200":
-          description: updated
+          description: updated; token present only when rotate_token was set
   /api/v1/actions:
     get:
       security: [{ bearerAuth: [] }]
@@ -219,12 +593,22 @@ paths:
       responses:
         "200":
           description: automations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Automation" }
     post:
       security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Automation" }
       responses:
         "201":
           description: created
     patch:
+      summary: Update, enable/disable, or delete (id + delete=true)
       security: [{ bearerAuth: [] }]
       responses:
         "200":
@@ -235,6 +619,11 @@ paths:
       responses:
         "200":
           description: severity policies with runbooks
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SeverityPolicy" }
     post:
       security: [{ bearerAuth: [] }]
       responses:
@@ -267,6 +656,11 @@ paths:
       responses:
         "200":
           description: audit log
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEntry" }
   /api/v1/stream:
     get:
       security: [{ bearerAuth: [] }]
@@ -276,6 +670,7 @@ paths:
           description: event stream
   /api/v1/ingest/observations:
     post:
+      summary: Connector-authenticated observation ingest
       security: [{ bearerAuth: [] }]
       responses:
         "202":
@@ -284,12 +679,14 @@ paths:
           description: rate limited
   /api/v1/ingest/inventory:
     post:
+      summary: Connector-authenticated inventory upsert
       security: [{ bearerAuth: [] }]
       responses:
         "200":
           description: upserted asset
   /api/v1/ingest/events:
     post:
+      summary: Connector-authenticated event ingest
       security: [{ bearerAuth: [] }]
       responses:
         "202":
@@ -299,3 +696,188 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+      description: A login session token, a human API key (POST /api/v1/api-keys), or a connector token — see each route's summary.
+  schemas:
+    SessionResponse:
+      type: object
+      properties:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+        expires_at: { type: string, format: date-time }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        email: { type: string }
+        display_name: { type: string }
+        role: { type: string, enum: [viewer, operator, admin] }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+    APIKey:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        user_id: { type: string }
+        name: { type: string }
+        token_hint: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+    Site:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        address: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        timezone: { type: string }
+        created_at: { type: string, format: date-time }
+    Asset:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        site_id: { type: string, nullable: true }
+        name: { type: string }
+        external_ref: { type: string }
+        kind: { type: string }
+        status: { type: string }
+        health: { type: string, enum: [healthy, degraded, critical, stale, unknown] }
+        manufacturer: { type: string }
+        model: { type: string }
+        serial: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        last_seen_at: { type: string, format: date-time, nullable: true }
+        stale_after_sec: { type: integer }
+        metadata: { type: string, description: JSON-encoded }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Capability:
+      type: object
+      properties:
+        id: { type: string }
+        asset_id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        unit: { type: string }
+        min: { type: number, nullable: true }
+        max: { type: number, nullable: true }
+        writable: { type: boolean }
+    Observation:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        asset_id: { type: string }
+        capability: { type: string }
+        value: { type: number }
+        unit: { type: string }
+        quality: { type: string, enum: [good, bad, uncertain] }
+        source: { type: string }
+        observed_at: { type: string, format: date-time }
+        received_at: { type: string, format: date-time }
+    TelemetryPoint:
+      type: object
+      properties:
+        asset_id: { type: string }
+        asset_name: { type: string }
+        capability: { type: string }
+        value: { type: number }
+        unit: { type: string }
+        quality: { type: string }
+        source: { type: string }
+        observed_at: { type: string, format: date-time }
+        received_at: { type: string, format: date-time }
+        fresh: { type: boolean }
+    Incident:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        asset_id: { type: string, nullable: true }
+        site_id: { type: string, nullable: true }
+        title: { type: string }
+        severity: { type: string, enum: [info, warning, critical] }
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        owner: { type: string }
+        summary: { type: string }
+        resolution: { type: string }
+        runbook: { type: string }
+        opened_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+    WorkOrder:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        asset_id: { type: string, nullable: true }
+        site_id: { type: string, nullable: true }
+        incident_id: { type: string, nullable: true }
+        title: { type: string }
+        kind: { type: string }
+        priority: { type: string }
+        status: { type: string }
+        assignee: { type: string }
+        notes: { type: string }
+        due_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Connector:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        status: { type: string }
+        endpoint: { type: string }
+        token_hint: { type: string }
+        actions: { type: string, description: JSON-encoded array }
+        config: { type: string, description: JSON-encoded }
+        last_sync_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    Automation:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        name: { type: string }
+        enabled: { type: boolean }
+        trigger_kind: { type: string, enum: [threshold, capability_min, capability_max, stale] }
+        capability: { type: string }
+        operator: { type: string, enum: [gt, gte, lt, lte] }
+        threshold: { type: number }
+        action: { type: string, enum: [open_incident, notify, webhook, email, slack, pagerduty] }
+        config:
+          type: string
+          description: >
+            JSON-encoded, action-specific: webhook {"url"}, slack {"slack_url"},
+            pagerduty {"routing_key"}, email {"to"}.
+        created_at: { type: string, format: date-time }
+    SeverityPolicy:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        name: { type: string }
+        match_kind: { type: string, enum: [capability, automation, default] }
+        match_value: { type: string }
+        severity: { type: string, enum: [info, warning, critical] }
+        runbook: { type: string }
+        priority: { type: integer }
+        created_at: { type: string, format: date-time }
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: string }
+        organization_id: { type: string }
+        actor: { type: string }
+        action: { type: string }
+        object: { type: string }
+        detail: { type: string }
+        created_at: { type: string, format: date-time }
