@@ -3,6 +3,7 @@ import { api, Connector } from "../lib/api";
 import { fmt } from "../components/Shell";
 
 type ActionResult = { id: string; status: string; result: string; action: string };
+type ActionRow = { id: string; action: string; status: string; result: string; created_at: string; expires_at?: string };
 
 function parseActions(raw: string): string[] {
   try {
@@ -15,11 +16,17 @@ function parseActions(raw: string): string[] {
 
 export default function Integrations() {
   const [rows, setRows] = useState<Connector[]>([]);
+  const [actions, setActions] = useState<ActionRow[]>([]);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
 
   async function load() {
-    setRows(await api<Connector[]>("/api/v1/connectors"));
+    const [c, a] = await Promise.all([
+      api<Connector[]>("/api/v1/connectors"),
+      api<ActionRow[]>("/api/v1/actions"),
+    ]);
+    setRows(c);
+    setActions(a);
   }
   useEffect(() => { load(); }, []);
 
@@ -107,6 +114,26 @@ export default function Integrations() {
             </div>
           );
         })}
+        {!rows.length && (
+          <p className="empty">No connectors yet. Finish <a href="/onboarding">Get started</a> or check seed data.</p>
+        )}
+      </div>
+      <div className="card table-wrap" style={{ marginTop: 16 }}>
+        <h2 style={{ marginBottom: 12 }}>Recent actions</h2>
+        <table>
+          <thead><tr><th>Action</th><th>Status</th><th>Result</th><th>When</th></tr></thead>
+          <tbody>
+            {actions.slice(0, 20).map((a) => (
+              <tr key={a.id}>
+                <td>{a.action}</td>
+                <td><span className={`pill ${a.status === "done" || a.status === "ok" ? "ok" : a.status === "expired" || a.status === "failed" ? "bad" : "stale"}`}>{a.status}</span></td>
+                <td style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis" }}>{a.result || "—"}</td>
+                <td>{fmt(a.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!actions.length && <p className="empty">No remote actions yet. Run inventory.refresh from Device Agent.</p>}
       </div>
     </>
   );

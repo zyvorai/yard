@@ -3,15 +3,18 @@ import { useSearchParams } from "react-router-dom";
 import { api, Asset, EventItem, Site, WorkOrder } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
 
+type Cap = { id?: string; name: string; kind?: string; unit: string; min?: number; max?: number; writable?: boolean };
+
 type Detail = {
   asset: Asset;
-  capabilities: { name: string; unit: string }[];
+  capabilities: Cap[];
   observations: { capability: string; value: number; unit: string; observed_at: string; quality: string; source: string }[];
   events?: EventItem[];
   work_orders?: WorkOrder[];
 };
 
 const KINDS = ["device", "sensor", "machine", "vehicle", "equipment"];
+const CUSTOM = "__custom__";
 
 export default function Assets() {
   const [rows, setRows] = useState<Asset[]>([]);
@@ -24,9 +27,11 @@ export default function Assets() {
   const [editing, setEditing] = useState(false);
   const [err, setErr] = useState("");
   const [form, setForm] = useState({
-    name: "", kind: "equipment", external_ref: "", manufacturer: "", model: "", serial: "",
+    name: "", kind: "equipment", custom_kind: "", external_ref: "", manufacturer: "", model: "", serial: "",
     site_id: "", latitude: "", longitude: "", stale_after_sec: "90",
   });
+  const [capEdit, setCapEdit] = useState(false);
+  const [capRows, setCapRows] = useState<Cap[]>([]);
   const [params] = useSearchParams();
 
   async function load() {
@@ -57,7 +62,7 @@ export default function Assets() {
 
   function startCreate() {
     setForm({
-      name: "", kind: "equipment", external_ref: "", manufacturer: "", model: "", serial: "",
+      name: "", kind: "equipment", custom_kind: "", external_ref: "", manufacturer: "", model: "", serial: "",
       site_id: "", latitude: "", longitude: "", stale_after_sec: "90",
     });
     setFormOpen(true);
@@ -68,9 +73,11 @@ export default function Assets() {
   function startEdit() {
     if (!sel) return;
     const a = sel.asset;
+    const known = KINDS.includes(a.kind);
     setForm({
       name: a.name,
-      kind: a.kind,
+      kind: known ? a.kind : CUSTOM,
+      custom_kind: known ? "" : a.kind,
       external_ref: a.external_ref || "",
       manufacturer: a.manufacturer || "",
       model: a.model || "",
@@ -85,6 +92,10 @@ export default function Assets() {
     setErr("");
   }
 
+  function resolvedKind() {
+    return form.kind === CUSTOM ? form.custom_kind.trim() || "equipment" : form.kind;
+  }
+
   async function save(e: FormEvent) {
     e.preventDefault();
     setErr("");
@@ -94,7 +105,7 @@ export default function Assets() {
     }
     const body: Record<string, unknown> = {
       name: form.name.trim(),
-      kind: form.kind,
+      kind: resolvedKind(),
       external_ref: form.external_ref.trim(),
       manufacturer: form.manufacturer.trim(),
       model: form.model.trim(),
@@ -117,6 +128,30 @@ export default function Assets() {
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "save failed");
     }
+  }
+
+  function startCapEdit() {
+    if (!sel) return;
+    setCapRows(sel.capabilities.map((c) => ({ ...c })));
+    setCapEdit(true);
+  }
+
+  async function saveCaps(e: FormEvent) {
+    e.preventDefault();
+    if (!sel) return;
+    const body = capRows
+      .filter((c) => c.name.trim())
+      .map((c) => ({
+        name: c.name.trim(),
+        kind: c.kind || "measurement",
+        unit: c.unit || "",
+        min: c.min,
+        max: c.max,
+        writable: !!c.writable,
+      }));
+    await api(`/api/v1/assets/${sel.asset.id}/capabilities`, { method: "PUT", body: JSON.stringify(body) });
+    setCapEdit(false);
+    await open(sel.asset.id);
   }
 
   async function remove() {
@@ -149,9 +184,13 @@ export default function Assets() {
             <label>Name<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
             <label>Kind
               <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
-                {kinds.map((k) => <option key={k}>{k}</option>)}
+                {kinds.map((k) => <option key={k} value={k}>{k}</option>)}
+                <option value={CUSTOM}>Custom…</option>
               </select>
             </label>
+            {form.kind === CUSTOM && (
+              <label>Custom kind<input value={form.custom_kind} onChange={(e) => setForm({ ...form, custom_kind: e.target.value })} placeholder="e.g. pump-skid" required /></label>
+            )}
             <label>External ref<input value={form.external_ref} onChange={(e) => setForm({ ...form, external_ref: e.target.value })} /></label>
             <label>Site
               <select value={form.site_id} onChange={(e) => setForm({ ...form, site_id: e.target.value })}>
@@ -185,6 +224,13 @@ export default function Assets() {
               ))}
             </tbody>
           </table>
+          {!rows.length && (
+            <p className="empty">
+              No assets yet.{" "}
+              <button type="button" className="btn small accent" onClick={startCreate}>Add asset</button>
+              {" "}or finish <a href="/onboarding">Get started</a>.
+            </p>
+          )}
         </div>
         <aside className="panel">
           {!sel && <p className="empty">Select an asset. The list stays in place.</p>}
@@ -205,8 +251,45 @@ export default function Assets() {
               {tab === "Overview" && (
                 <div>
                   <p><Health value={sel.asset.health} /> · stale after {sel.asset.stale_after_sec}s</p>
-                  <p className="lede">Capabilities</p>
-                  {sel.capabilities.map((c) => <div key={c.name} className="pill" style={{ margin: 4 }}>{c.name} {c.unit}</div>)}
+                  <div className="row-actions" style={{ margin: "8px 0", justifyContent: "space-between" }}>
+                    <p className="lede" style={{ margin: 0 }}>Capabilities</p>
+                    <button type="button" className="btn small ghost" onClick={startCapEdit}>Edit</button>
+                  </div>
+                  {capEdit ? (
+                    <form onSubmit={saveCaps}>
+                      {capRows.map((c, i) => (
+                        <div key={i} className="form-grid" style={{ marginBottom: 8, gridTemplateColumns: "1fr 1fr" }}>
+                          <input placeholder="name" value={c.name} onChange={(e) => {
+                            const next = [...capRows]; next[i] = { ...c, name: e.target.value }; setCapRows(next);
+                          }} />
+                          <input placeholder="unit" value={c.unit} onChange={(e) => {
+                            const next = [...capRows]; next[i] = { ...c, unit: e.target.value }; setCapRows(next);
+                          }} />
+                          <input type="number" step="any" placeholder="min" value={c.min ?? ""} onChange={(e) => {
+                            const next = [...capRows]; next[i] = { ...c, min: e.target.value === "" ? undefined : Number(e.target.value) }; setCapRows(next);
+                          }} />
+                          <input type="number" step="any" placeholder="max" value={c.max ?? ""} onChange={(e) => {
+                            const next = [...capRows]; next[i] = { ...c, max: e.target.value === "" ? undefined : Number(e.target.value) }; setCapRows(next);
+                          }} />
+                        </div>
+                      ))}
+                      <div className="row-actions">
+                        <button type="button" className="btn small ghost" onClick={() => setCapRows([...capRows, { name: "", unit: "" }])}>Add signal</button>
+                        <button type="submit" className="btn small accent">Save</button>
+                        <button type="button" className="btn small ghost" onClick={() => setCapEdit(false)}>Cancel</button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      {sel.capabilities.map((c) => (
+                        <div key={c.name} className="pill" style={{ margin: 4 }}>
+                          {c.name} {c.unit}
+                          {(c.min != null || c.max != null) && ` · ${c.min ?? "–"}…${c.max ?? "–"}`}
+                        </div>
+                      ))}
+                      {!sel.capabilities.length && <p className="lede">No capabilities yet. Edit to add signals.</p>}
+                    </>
+                  )}
                   {(sel.asset.latitude != null && sel.asset.longitude != null) && (
                     <p className="lede" style={{ marginTop: 8 }}>{sel.asset.latitude.toFixed(5)}, {sel.asset.longitude.toFixed(5)}</p>
                   )}

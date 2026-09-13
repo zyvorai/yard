@@ -65,6 +65,32 @@ func (e *Engine) StartStaleTicker(ctx context.Context, every time.Duration) {
 	}()
 }
 
+// StartActionSweeper expires queued remote actions past their deadline.
+func (e *Engine) StartActionSweeper(ctx context.Context, every time.Duration) {
+	if every <= 0 {
+		every = 60 * time.Second
+	}
+	go func() {
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				n, err := e.Store.ExpireActions(ctx)
+				if err != nil && e.Log != nil {
+					e.Log.Printf("action sweeper: %v", err)
+					continue
+				}
+				if n > 0 && e.Log != nil {
+					e.Log.Printf("action sweeper expired %d", n)
+				}
+			}
+		}
+	}()
+}
+
 func (e *Engine) IngestObservation(ctx context.Context, orgID string, in model.IngestObservation, source string) (*model.Observation, bool, error) {
 	var asset *model.Asset
 	var err error

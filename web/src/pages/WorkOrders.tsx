@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, Asset, WorkOrder } from "../lib/api";
 import { fmt } from "../components/Shell";
 
@@ -8,7 +9,7 @@ export default function WorkOrders() {
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState("");
   const [form, setForm] = useState({
-    title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "",
+    title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "", due_at: "",
   });
 
   async function load() {
@@ -41,9 +42,10 @@ export default function WorkOrders() {
       notes: form.notes.trim(),
     };
     if (form.asset_id) body.asset_id = form.asset_id;
+    if (form.due_at) body.due_at = new Date(form.due_at + "T17:00:00Z").toISOString();
     try {
       await api("/api/v1/work-orders", { method: "POST", body: JSON.stringify(body) });
-      setForm({ title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "" });
+      setForm({ title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "", due_at: "" });
       setOpen(false);
       await load();
     } catch (ex) {
@@ -76,7 +78,8 @@ export default function WorkOrders() {
               </select>
             </label>
             <label>Assignee<input value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} /></label>
-            <label>Asset
+            <label>Due date<input type="date" value={form.due_at} onChange={(e) => setForm({ ...form, due_at: e.target.value })} /></label>
+            <label className="span-2">Asset
               <select value={form.asset_id} onChange={(e) => setForm({ ...form, asset_id: e.target.value })}>
                 <option value="">None</option>
                 {assets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -92,17 +95,24 @@ export default function WorkOrders() {
       )}
       <div className="card table-wrap">
         <table>
-          <thead><tr><th>Title</th><th>Kind</th><th>Priority</th><th>Status</th><th>Assignee</th><th>Opened</th><th></th></tr></thead>
+          <thead><tr><th>Title</th><th>Kind</th><th>Priority</th><th>Status</th><th>Assignee</th><th>Due</th><th>Opened</th><th></th></tr></thead>
           <tbody>
             {rows.map((w) => (
               <tr key={w.id}>
-                <td>{w.title}</td><td>{w.kind}</td><td>{w.priority}</td><td>{w.status}</td><td>{w.assignee}</td><td>{fmt(w.created_at)}</td>
+                <td>{w.title}</td><td>{w.kind}</td><td>{w.priority}</td><td>{w.status}</td><td>{w.assignee || "—"}</td>
+                <td>{w.due_at ? fmt(w.due_at) : "—"}</td><td>{fmt(w.created_at)}</td>
                 <td>{w.status !== "done" && <button className="btn small" onClick={() => done(w.id)}>Complete</button>}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {!rows.length && <p className="empty">No work orders yet.</p>}
+        {!rows.length && (
+          <p className="empty">
+            No work orders yet.{" "}
+            <button type="button" className="btn small accent" onClick={() => setOpen(true)}>Create one</button>
+            {" "}or open from an <Link to="/incidents">incident</Link>.
+          </p>
+        )}
       </div>
     </>
   );

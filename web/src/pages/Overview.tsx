@@ -62,7 +62,11 @@ export default function Overview() {
                 <tr key={e.id}><td>{e.title}</td><td className="pill">{e.severity}</td><td>{fmt(e.created_at)}</td></tr>
               ))}
             </tbody></table>
-          ) : <p className="empty">No events yet. Start the simulator.</p>}
+          ) : (
+            <p className="empty">
+              No events yet. Start the <a href="/onboarding">Get started</a> path or run the simulator.
+            </p>
+          )}
         </div>
         <div className="card">
           <h2>Activity</h2>

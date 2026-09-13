@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { clearToken } from "../lib/api";
+import CommandPalette from "./CommandPalette";
 
 const items = [
   ["/", "Overview"],
@@ -15,6 +16,15 @@ const items = [
   ["/admin", "Administration"],
   ["/diagnostics", "Diagnostics"],
   ["/settings", "Settings"],
+  ["/onboarding", "Get started"],
+];
+
+const mobileItems = [
+  ["/", "Home"],
+  ["/assets", "Assets"],
+  ["/map", "Map"],
+  ["/work", "Work"],
+  ["/settings", "More"],
 ];
 
 function SignOutIcon() {
@@ -83,9 +93,18 @@ export default function Shell({ children }: { children: ReactNode }) {
         </nav>
         <div className="foot">
           <div>Northwind Operations</div>
+          <p className="lede" style={{ marginTop: 6, fontSize: 11 }}>⌘K command palette</p>
         </div>
       </aside>
       <main className={mapMode ? "main main--map" : "main"}>{children}</main>
+      <nav className="mobile-nav" aria-label="Primary">
+        {mobileItems.map(([to, label]) => (
+          <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "active" : "")}>
+            {label}
+          </NavLink>
+        ))}
+      </nav>
+      <CommandPalette />
     </div>
   );
 }

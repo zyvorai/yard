@@ -443,6 +443,43 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		writeJSON(w, 200, map[string]string{"deleted": id})
 		return
 	}
+	if len(parts) >= 2 && parts[1] == "capabilities" {
+		if r.Method == http.MethodGet {
+			caps, err := s.Store.ListCapabilities(r.Context(), a.ID)
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, caps)
+			return
+		}
+		if r.Method == http.MethodPut {
+			if !s.requireWrite(w, u) {
+				return
+			}
+			var caps []model.Capability
+			if err := readJSON(r, &caps); err != nil {
+				writeJSON(w, 400, map[string]string{"error": "invalid json"})
+				return
+			}
+			for i := range caps {
+				caps[i].AssetID = a.ID
+				if caps[i].Kind == "" {
+					caps[i].Kind = "measurement"
+				}
+			}
+			if err := s.Store.ReplaceCapabilities(r.Context(), a.ID, caps); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.capabilities", a.ID, a.Name)
+			out, _ := s.Store.ListCapabilities(r.Context(), a.ID)
+			writeJSON(w, 200, out)
+			return
+		}
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
 	if len(parts) >= 2 && parts[1] == "observations" {
 		cap := r.URL.Query().Get("capability")
 		limit := 400
@@ -603,6 +640,9 @@ func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.
 		return
 	}
 	if r.Method == http.MethodPatch {
+		if !s.requireWrite(w, u) {
+			return
+		}
 		var in map[string]string
 		_ = readJSON(r, &in)
 		if v := in["status"]; v != "" {
@@ -616,6 +656,15 @@ func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.
 		}
 		if v := in["priority"]; v != "" {
 			wo.Priority = v
+		}
+		if v, ok := in["due_at"]; ok {
+			if v == "" {
+				wo.DueAt = nil
+			} else if t, err := time.Parse(time.RFC3339, v); err == nil {
+				wo.DueAt = &t
+			} else if t, err := time.Parse("2006-01-02", v); err == nil {
+				wo.DueAt = &t
+			}
 		}
 		if err := s.Store.UpdateWorkOrder(r.Context(), wo); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -948,15 +997,30 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request, u *model.User) {
 }
 
 func (s *Server) onboarding(w http.ResponseWriter, r *http.Request, u *model.User) {
-	writeJSON(w, 200, map[string]any{
-		"steps": []map[string]string{
-			{"id": "workspace", "title": "Workspace ready", "body": "Northwind Operations is your first tenant."},
-			{"id": "source", "title": "Connect a source", "body": "Use the included simulator or point a Device Agent gateway at a local API."},
-			{"id": "discover", "title": "Discover assets", "body": "Inventory arrives as generic assets — devices are one kind."},
-			{"id": "health", "title": "Inspect health", "body": "Freshness, quality, and thresholds stay visible even when data is stale."},
-			{"id": "alert", "title": "Create an alert", "body": "Temperature or missed heartbeat opens an incident you can assign."},
-		},
-	})
+	assets, _ := s.Store.ListAssets(r.Context(), u.OrganizationID, "", "", "")
+	incidents, _ := s.Store.ListIncidents(r.Context(), u.OrganizationID, "")
+	connectors, _ := s.Store.ListConnectors(r.Context(), u.OrganizationID)
+	connected := false
+	for _, c := range connectors {
+		if c.Status == "connected" || c.Kind == "simulator" || c.Kind == "http-ingest" {
+			connected = true
+			break
+		}
+	}
+	steps := []map[string]any{
+		{"id": "workspace", "title": "Workspace ready", "body": "Your organization is seeded and ready.", "done": true},
+		{"id": "source", "title": "Connect a source", "body": "Use the included simulator or a Device Agent gateway.", "done": connected, "href": "/integrations"},
+		{"id": "discover", "title": "Discover assets", "body": "Inventory arrives as assets — devices are one kind.", "done": len(assets) > 0, "href": "/assets"},
+		{"id": "health", "title": "Inspect health", "body": "Open Overview or Map to see freshness and health.", "done": len(assets) > 0, "href": "/"},
+		{"id": "alert", "title": "Create an alert", "body": "Temperature or missed heartbeat opens an incident you can assign.", "done": len(incidents) > 0, "href": "/incidents"},
+	}
+	doneN := 0
+	for _, st := range steps {
+		if st["done"] == true {
+			doneN++
+		}
+	}
+	writeJSON(w, 200, map[string]any{"steps": steps, "completed": doneN, "total": len(steps)})
 }
 
 func (s *Server) ingestObs(w http.ResponseWriter, r *http.Request, c *model.Connector) {

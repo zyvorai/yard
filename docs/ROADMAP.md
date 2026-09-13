@@ -52,8 +52,8 @@ flowchart TD
 | Create asset via API | Have |
 | Create asset UI form | Have |
 | Edit / archive / delete asset | Have |
-| Asset kinds: device, sensor, machine, vehicle, equipment (+ custom) | Have (seed) / Next (custom) |
-| Capabilities (signals, units, thresholds, writable) | Have (model) / Next (UI editor) |
+| Asset kinds: device, sensor, machine, vehicle, equipment (+ custom) | Have |
+| Capabilities (signals, units, thresholds, writable) | Have (model + UI editor) |
 | External refs + manufacturer / model / serial / metadata | Have |
 | Asset relationships (parent/child, install history) | Later |
 | Bulk import/export (CSV/JSON) | Next |
@@ -104,7 +104,7 @@ flowchart TD
 | Create work order from incident | Have |
 | Work order list + mark done | Have |
 | Work order create UI (standalone) | Have |
-| Richer priorities / due dates / assignees UI | Next |
+| Richer priorities / due dates / assignees UI | Have |
 | Incident severity policies + runbooks | Next |
 | SLA timers / escalation | Later |
 | Checklists / procedures on work orders | Later |
@@ -123,7 +123,7 @@ flowchart TD
 | Notify-on-event automation | Have (notify + audit) |
 | Automation rule editor | Have (create / enable / delete) |
 | Webhook / email / Slack / PagerDuty actions | Have (webhook) / Next (email/Slack/PD) |
-| Remote actions with idempotency + expiry | Have (API) / Next (UI + sweeper) |
+| Remote actions with idempotency + expiry | Have (API + UI history + sweeper) |
 | Device Agent `inventory.refresh` / `diagnostics.read` | Have |
 | Two-person action approval | Later |
 | Multi-step playbooks | Later |
@@ -155,8 +155,8 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Overview health / incidents / work / activity | Have |
 | SSE stream API | Have |
 | UI subscribe to SSE | Have |
-| Onboarding wizard (`/onboarding`) | Next |
-| Global command palette | Next |
+| Onboarding wizard (`/onboarding`) | Have |
+| Global command palette | Have |
 | Browser notifications for critical incidents | Have |
 | Customizable overview widgets | Later |
 | Multi-workspace switcher | Later |
@@ -185,9 +185,9 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Dark theme toggle | Have |
 | Map full-bleed glass UI | Have |
 | Asset Activity / Work / Integrations tabs filled | Have (Activity / Work) |
-| Empty states + first-run guided demo | Next |
+| Empty states + first-run guided demo | Have |
 | Accessibility audit (WCAG) | Next |
-| Responsive / tablet field layout | Next |
+| Responsive / tablet field layout | Have (bottom nav) |
 | i18n | Later |
 | Printable WO / incident reports | Later |
 | Saved views / filters | Later |

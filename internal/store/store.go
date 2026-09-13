@@ -767,8 +767,8 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, wo.ID, wo.OrganizationID, wo.AssetID, wo.S
 
 func (s *Store) UpdateWorkOrder(ctx context.Context, wo *model.WorkOrder) error {
 	wo.UpdatedAt = time.Now().UTC()
-	_, err := s.exec(ctx, `UPDATE work_orders SET title=?, kind=?, priority=?, status=?, assignee=?, notes=?, incident_id=?, updated_at=? WHERE id=? AND organization_id=?`,
-		wo.Title, wo.Kind, wo.Priority, wo.Status, wo.Assignee, wo.Notes, wo.IncidentID, wo.UpdatedAt.Format(time.RFC3339Nano), wo.ID, wo.OrganizationID)
+	_, err := s.exec(ctx, `UPDATE work_orders SET title=?, kind=?, priority=?, status=?, assignee=?, notes=?, incident_id=?, due_at=?, updated_at=? WHERE id=? AND organization_id=?`,
+		wo.Title, wo.Kind, wo.Priority, wo.Status, wo.Assignee, wo.Notes, wo.IncidentID, ts(wo.DueAt), wo.UpdatedAt.Format(time.RFC3339Nano), wo.ID, wo.OrganizationID)
 	return err
 }
 
@@ -950,6 +950,17 @@ func (s *Store) ListActions(ctx context.Context, orgID string) ([]model.ActionRe
 func (s *Store) CompleteAction(ctx context.Context, id, status, result string) error {
 	_, err := s.exec(ctx, `UPDATE action_requests SET status=?, result=?, completed_at=? WHERE id=?`, status, result, now(), id)
 	return err
+}
+
+// ExpireActions marks queued/running actions past expires_at as expired.
+func (s *Store) ExpireActions(ctx context.Context) (int, error) {
+	res, err := s.exec(ctx, `UPDATE action_requests SET status='expired', result=?, completed_at=? WHERE status IN ('queued','running','accepted') AND expires_at<>'' AND expires_at<?`,
+		"expired by sweeper", now(), time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 func (s *Store) CreateAutomation(ctx context.Context, a *model.Automation) error {

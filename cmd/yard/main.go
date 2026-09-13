@@ -55,6 +55,7 @@ func main() {
 	runCtx, runCancel := context.WithCancel(context.Background())
 	defer runCancel()
 	srv.Engine.StartStaleTicker(runCtx, 30*time.Second)
+	srv.Engine.StartActionSweeper(runCtx, 60*time.Second)
 
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

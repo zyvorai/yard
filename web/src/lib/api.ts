@@ -80,6 +80,7 @@ export type WorkOrder = {
   notes: string;
   incident_id?: string;
   asset_id?: string;
+  due_at?: string;
   created_at: string;
 };
 
