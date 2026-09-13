@@ -4,7 +4,7 @@
 name: Deploy Docs Site
 on:
   push:
-    branches: [master]
+    branches: [main, master]
     paths: ['website/**', 'docs/ux/**', 'docs/social/**', '.github/workflows/pages.yml']
   workflow_dispatch: {}
 concurrency:

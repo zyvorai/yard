@@ -10,7 +10,7 @@ import RelatedArticles from '@site/src/components/RelatedArticles';
 Yard exposes a versioned HTTP API under `/api/v1`. The OpenAPI 3.0
 description lives in the repository:
 
-[openapi.yaml](https://github.com/zyvorai/yard/blob/master/openapi.yaml)
+[openapi.yaml](https://github.com/zyvorai/yard/blob/main/openapi.yaml)
 
 ## Auth
 

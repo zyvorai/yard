@@ -56,6 +56,6 @@ Edit policies under **Administration → Incident severity policies**
   items={[
     {label: 'API', to: '../api', description: 'Curl examples for export/import and policies'},
     {label: 'Architecture', to: '../core-concepts/architecture', description: 'Data model'},
-    {label: 'Full feature catalog', to: 'https://github.com/zyvorai/yard/blob/master/docs/ROADMAP.md', description: 'docs/ROADMAP.md'},
+    {label: 'Full feature catalog', to: 'https://github.com/zyvorai/yard/blob/main/docs/ROADMAP.md', description: 'docs/ROADMAP.md'},
   ]}
 />

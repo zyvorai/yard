@@ -44,7 +44,7 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/zyvorai/yard/tree/master/website/',
+          editUrl: 'https://github.com/zyvorai/yard/tree/main/website/',
         },
         blog: false,
         theme: {
@@ -129,11 +129,11 @@ const config: Config = {
             {label: 'GitHub', href: 'https://github.com/zyvorai/yard'},
             {
               label: 'Roadmap',
-              href: 'https://github.com/zyvorai/yard/blob/master/docs/ROADMAP.md',
+              href: 'https://github.com/zyvorai/yard/blob/main/docs/ROADMAP.md',
             },
             {
               label: 'License (Apache-2.0)',
-              href: 'https://github.com/zyvorai/yard/blob/master/LICENSE',
+              href: 'https://github.com/zyvorai/yard/blob/main/LICENSE',
             },
           ],
         },

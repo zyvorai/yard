@@ -80,6 +80,6 @@ See [Deploy](../guides/deploy) for details.
     {label: 'Console features', to: '../guides/console', description: 'Bulk IO, map clustering, runbooks'},
     {label: 'Connectors', to: '../guides/connectors', description: 'Ingest and Device Agent'},
     {label: 'API', to: '../api', description: 'Export/import and severity policies'},
-    {label: 'Full feature catalog', to: 'https://github.com/zyvorai/yard/blob/master/docs/ROADMAP.md', description: 'docs/ROADMAP.md'},
+    {label: 'Full feature catalog', to: 'https://github.com/zyvorai/yard/blob/main/docs/ROADMAP.md', description: 'docs/ROADMAP.md'},
   ]}
 />
