@@ -7,8 +7,12 @@ const config: Config = {
   tagline: 'Register assets. See health. Close the work.',
   favicon: 'img/favicon.svg',
 
+  // v4 future flags break the legacy `:::note`/`:::caution` admonition
+  // syntax used throughout docs/ — every admonition silently rendered as
+  // raw text instead of a styled callout. Keep this false until the docs
+  // migrate to the new directive syntax.
   future: {
-    v4: true,
+    v4: false,
   },
 
   url: 'https://zyvorai.github.io',
