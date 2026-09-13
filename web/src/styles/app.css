@@ -137,7 +137,9 @@ a { color: inherit; text-decoration: none; }
   padding: 8px 10px; border-radius: 10px; color: var(--ink); font-size: 13.5px;
 }
 .nav a:hover, .nav a:focus-visible { background: var(--nav-hover); outline: none; }
-.nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.nav a svg { flex-shrink: 0; opacity: 0.75; }
+.nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--line); }
+.nav a.active svg { opacity: 1; }
 .nav .sec { margin: 16px 10px 6px; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.06em; }
 .sidebar .foot { margin-top: auto; padding: 10px; color: var(--muted); font-size: 12px; }
 .theme-toggle {
