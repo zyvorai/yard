@@ -3,14 +3,17 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +77,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/connectors", s.withUser(s.connectors))
 	mux.HandleFunc("/api/v1/actions", s.withUser(s.actions))
 	mux.HandleFunc("/api/v1/automations", s.withUser(s.automations))
+	mux.HandleFunc("/api/v1/severity-policies", s.withUser(s.severityPolicies))
+	mux.HandleFunc("/api/v1/severity-policies/", s.withUser(s.severityPolicyItem))
 	mux.HandleFunc("/api/v1/audit", s.withUser(s.audit))
 	mux.HandleFunc("/api/v1/stream", s.withUser(s.stream))
 	mux.HandleFunc("/api/v1/onboarding", s.withUser(s.onboarding))
@@ -364,6 +369,14 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		writeJSON(w, 404, map[string]string{"error": "not found"})
 		return
 	}
+	if id == "export" {
+		s.assetsExport(w, r, u)
+		return
+	}
+	if id == "import" {
+		s.assetsImport(w, r, u)
+		return
+	}
 	a, err := s.Store.AssetByID(r.Context(), u.OrganizationID, id)
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "not found"})
@@ -494,6 +507,275 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 	writeJSON(w, 404, map[string]string{"error": "not found"})
 }
 
+func (s *Server) assetsExport(w http.ResponseWriter, r *http.Request, u *model.User) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	list, err := s.Store.ListAssets(r.Context(), u.OrganizationID, r.URL.Query().Get("q"), r.URL.Query().Get("kind"), r.URL.Query().Get("health"))
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	format := strings.ToLower(r.URL.Query().Get("format"))
+	if format == "" {
+		format = "json"
+	}
+	switch format {
+	case "json":
+		w.Header().Set("Content-Disposition", `attachment; filename="assets.json"`)
+		writeJSON(w, 200, list)
+	case "csv":
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="assets.csv"`)
+		cw := csv.NewWriter(w)
+		_ = cw.Write([]string{"name", "external_ref", "kind", "status", "health", "manufacturer", "model", "serial", "site_id", "latitude", "longitude", "stale_after_sec", "metadata"})
+		for _, a := range list {
+			_ = cw.Write([]string{
+				a.Name, a.ExternalRef, a.Kind, a.Status, a.Health, a.Manufacturer, a.Model, a.Serial,
+				derefS(a.SiteID), fmtFloat(a.Latitude), fmtFloat(a.Longitude), strconv.Itoa(a.StaleAfterSec), a.Metadata,
+			})
+		}
+		cw.Flush()
+	default:
+		writeJSON(w, 400, map[string]string{"error": "format must be json or csv"})
+	}
+}
+
+func (s *Server) assetsImport(w http.ResponseWriter, r *http.Request, u *model.User) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	if !s.requireWrite(w, u) {
+		return
+	}
+	ct := r.Header.Get("Content-Type")
+	format := strings.ToLower(r.URL.Query().Get("format"))
+	if format == "" {
+		if strings.Contains(ct, "text/csv") || strings.Contains(ct, "application/csv") {
+			format = "csv"
+		} else {
+			format = "json"
+		}
+	}
+	var rows []model.Asset
+	switch format {
+	case "json":
+		body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "read body"})
+			return
+		}
+		if err := json.Unmarshal(body, &rows); err != nil {
+			var one model.Asset
+			if err2 := json.Unmarshal(body, &one); err2 != nil {
+				writeJSON(w, 400, map[string]string{"error": "invalid json array or object"})
+				return
+			}
+			rows = []model.Asset{one}
+		}
+	case "csv":
+		body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "read body"})
+			return
+		}
+		cr := csv.NewReader(strings.NewReader(string(body)))
+		records, err := cr.ReadAll()
+		if err != nil || len(records) < 2 {
+			writeJSON(w, 400, map[string]string{"error": "invalid csv"})
+			return
+		}
+		header := map[string]int{}
+		for i, h := range records[0] {
+			header[strings.ToLower(strings.TrimSpace(h))] = i
+		}
+		col := func(row []string, name string) string {
+			i, ok := header[name]
+			if !ok || i >= len(row) {
+				return ""
+			}
+			return strings.TrimSpace(row[i])
+		}
+		for _, row := range records[1:] {
+			a := model.Asset{
+				Name:          col(row, "name"),
+				ExternalRef:   col(row, "external_ref"),
+				Kind:          col(row, "kind"),
+				Status:        col(row, "status"),
+				Manufacturer:  col(row, "manufacturer"),
+				Model:         col(row, "model"),
+				Serial:        col(row, "serial"),
+				Metadata:      col(row, "metadata"),
+				StaleAfterSec: atoiDefault(col(row, "stale_after_sec"), 90),
+			}
+			if site := col(row, "site_id"); site != "" {
+				a.SiteID = &site
+			}
+			if lat := parseFloatPtr(col(row, "latitude")); lat != nil {
+				a.Latitude = lat
+			}
+			if lng := parseFloatPtr(col(row, "longitude")); lng != nil {
+				a.Longitude = lng
+			}
+			if a.Name == "" && a.ExternalRef == "" {
+				continue
+			}
+			if a.Name == "" {
+				a.Name = a.ExternalRef
+			}
+			rows = append(rows, a)
+		}
+	default:
+		writeJSON(w, 400, map[string]string{"error": "format must be json or csv"})
+		return
+	}
+	created, updated := 0, 0
+	var out []model.Asset
+	for i := range rows {
+		a, action, err := s.Store.ImportAssetRow(r.Context(), u.OrganizationID, &rows[i])
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if action == "created" {
+			created++
+		} else {
+			updated++
+		}
+		out = append(out, *a)
+	}
+	_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.import", fmt.Sprintf("%d", len(out)), fmt.Sprintf("created=%d updated=%d format=%s", created, updated, format))
+	writeJSON(w, 200, map[string]any{"created": created, "updated": updated, "assets": out})
+}
+
+func derefS(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func fmtFloat(p *float64) string {
+	if p == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*p, 'f', -1, 64)
+}
+
+func parseFloatPtr(s string) *float64 {
+	if s == "" {
+		return nil
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil
+	}
+	return &v
+}
+
+func atoiDefault(s string, d int) int {
+	if s == "" {
+		return d
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return d
+	}
+	return n
+}
+
+func (s *Server) severityPolicies(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListSeverityPolicies(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var p model.SeverityPolicy
+		if err := readJSON(r, &p); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		p.OrganizationID = u.OrganizationID
+		if p.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "name required"})
+			return
+		}
+		if err := s.Store.CreateSeverityPolicy(r.Context(), &p); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "severity_policy.create", p.ID, p.Name)
+		writeJSON(w, 201, p)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) severityPolicyItem(w http.ResponseWriter, r *http.Request, u *model.User) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/severity-policies/")
+	if id == "" {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	p, err := s.Store.GetSeverityPolicy(r.Context(), u.OrganizationID, id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, 200, p)
+	case http.MethodPatch:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in model.SeverityPolicy
+		if err := readJSON(r, &in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		if in.Name != "" {
+			p.Name = in.Name
+		}
+		if in.MatchKind != "" {
+			p.MatchKind = in.MatchKind
+		}
+		p.MatchValue = in.MatchValue
+		if in.Severity != "" {
+			p.Severity = in.Severity
+		}
+		p.Runbook = in.Runbook
+		p.Priority = in.Priority
+		if err := s.Store.UpdateSeverityPolicy(r.Context(), p); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "severity_policy.update", p.ID, p.Name)
+		writeJSON(w, 200, p)
+	case http.MethodDelete:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		if err := s.Store.DeleteSeverityPolicy(r.Context(), u.OrganizationID, id); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "severity_policy.delete", id, p.Name)
+		writeJSON(w, 200, map[string]string{"deleted": id})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
 func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, u *model.User) {
 	pts, err := s.Store.LatestTelemetry(r.Context(), u.OrganizationID)
 	if err != nil {
@@ -528,8 +810,14 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request, u *model.User
 			return
 		}
 		inc.OrganizationID = u.OrganizationID
-		if inc.Severity == "" {
-			inc.Severity = "warning"
+		if inc.Severity == "" || inc.Runbook == "" {
+			sev, rb := s.Store.ResolveSeverity(r.Context(), u.OrganizationID, "", "")
+			if inc.Severity == "" {
+				inc.Severity = sev
+			}
+			if inc.Runbook == "" {
+				inc.Runbook = rb
+			}
 		}
 		if err := s.Store.CreateIncident(r.Context(), &inc); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})

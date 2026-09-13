@@ -11,9 +11,9 @@ type Shot = {
 
 const TOUR: Shot[] = [
   {src: '/00-overview.png', caption: 'Overview'},
-  {src: '/01-assets.png', caption: 'Assets'},
+  {src: '/01-assets.png', caption: 'Assets (search, kinds, bulk import/export)'},
   {src: '/02-sites.png', caption: 'Sites'},
-  {src: '/03-map.png', caption: 'Map'},
+  {src: '/03-map.png', caption: 'Map (clustered pins)'},
   {src: '/04-telemetry.png', caption: 'Telemetry'},
   {src: '/05-work-orders.png', caption: 'Work orders'},
   {src: '/06-automations.png', caption: 'Automations'},
@@ -51,8 +51,8 @@ export default function Gallery(): ReactNode {
             alt="Yard Overview — health counters, incidents, and activity"
           />
           <p className={styles.caption}>
-            Live lab: Overview health and incidents, MapLibre map, telemetry
-            with freshness, and automation rules.
+            Live lab: Overview health and incidents, clustered MapLibre map,
+            telemetry with freshness, automations, and severity runbooks.
           </p>
         </div>
         <div className={styles.grid}>

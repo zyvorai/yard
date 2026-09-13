@@ -29,7 +29,8 @@ go run ./cmd/simulator
 
 First-use path: seeded workspace → simulator (or Device Agent gateway) →
 discover assets → inspect health → temperature / missed heartbeat opens an
-incident → assign a work order → record resolution on the asset timeline.
+incident (with severity policy + runbook) → assign a work order → record
+resolution on the asset timeline.
 
 ## Console development
 
@@ -72,5 +73,7 @@ See [Deploy](../guides/deploy) for details.
 ## What's next
 
 - [Architecture](../core-concepts/architecture) — asset model and boundaries
+- [Console features](../guides/console) — bulk IO, map clustering, runbooks
 - [Connectors](../guides/connectors) — ingest and Device Agent
+- [API](../api) — export/import and severity policies
 - Full feature catalog: [docs/ROADMAP.md](https://github.com/zyvorai/yard/blob/master/docs/ROADMAP.md)

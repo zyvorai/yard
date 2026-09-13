@@ -258,8 +258,8 @@ func (e *Engine) openIncident(ctx context.Context, orgID string, asset *model.As
 		return nil
 	}
 	_ = existing
-	sev := "warning"
-	if obs.Value >= 90 || asset.Health == "critical" {
+	sev, runbook := e.Store.ResolveSeverity(ctx, orgID, obs.Capability, a.Name)
+	if (obs.Value >= 90 || asset.Health == "critical") && sev != "critical" {
 		sev = "critical"
 	}
 	inc := &model.Incident{
@@ -270,6 +270,7 @@ func (e *Engine) openIncident(ctx context.Context, orgID string, asset *model.As
 		Severity:       sev,
 		Status:         "open",
 		Summary:        fmt.Sprintf("%s=%v %s (threshold %s %v)", obs.Capability, obs.Value, obs.Unit, a.Operator, a.Threshold),
+		Runbook:        runbook,
 	}
 	if err := e.Store.CreateIncident(ctx, inc); err != nil {
 		return err
@@ -360,20 +361,22 @@ func (e *Engine) MarkStale(ctx context.Context, orgID string) error {
 				if err != nil || !need {
 					continue
 				}
+				sev, runbook := e.Store.ResolveSeverity(ctx, orgID, "heartbeat", a.Name)
 				inc := &model.Incident{
 					OrganizationID: orgID,
 					AssetID:        &asset.ID,
 					SiteID:         asset.SiteID,
 					Title:          title,
-					Severity:       "warning",
+					Severity:       sev,
 					Status:         "open",
 					Summary:        "Telemetry older than stale_after_sec; heartbeat missing.",
+					Runbook:        runbook,
 				}
 				if err := e.Store.CreateIncident(ctx, inc); err != nil {
 					return err
 				}
 				_, _ = e.Store.InsertEvent(ctx, &model.Event{
-					OrganizationID: orgID, AssetID: &asset.ID, Kind: "heartbeat.missed", Severity: "warning",
+					OrganizationID: orgID, AssetID: &asset.ID, Kind: "heartbeat.missed", Severity: sev,
 					Title: title, Body: inc.Summary, DedupeKey: "stale:" + asset.ID,
 				})
 				e.publish(orgID, "incident.opened", inc)

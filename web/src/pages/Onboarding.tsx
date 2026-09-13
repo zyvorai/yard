@@ -1,13 +1,54 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { GroupedList, GroupedRow } from "../components/GroupedList";
 
 type Step = { id: string; title: string; body: string; done?: boolean; href?: string };
+
+function CheckIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 12.5l4.5 4.5L19 7" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function StepPanel({ step, index, onClose }: { step: Step; index: number; onClose: () => void }) {
+  return (
+    <div className="step-overlay" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="step-card" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="icon-btn step-card-close" aria-label="Close" onClick={onClose}>
+          <CloseIcon />
+        </button>
+        <div className="step-icon">{index + 1}</div>
+        <h2>{step.title}</h2>
+        <p>{step.body}</p>
+        <div className="step-actions">
+          {step.href ? (
+            <Link className="btn accent" to={step.href} onClick={onClose}>Continue</Link>
+          ) : (
+            <button type="button" className="btn accent" onClick={onClose}>Got it</button>
+          )}
+          <button type="button" className="btn ghost" onClick={onClose}>Not now</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Onboarding() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [completed, setCompleted] = useState(0);
   const [total, setTotal] = useState(0);
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
 
   useEffect(() => {
     api<{ steps: Step[]; completed: number; total: number }>("/api/v1/onboarding").then((r) => {
@@ -17,38 +58,43 @@ export default function Onboarding() {
     });
   }, []);
 
+  const focused = focusedIndex !== null ? steps[focusedIndex] : undefined;
+
   return (
     <>
       <div className="topbar">
         <div>
           <h1>Get started</h1>
-          <p className="lede">
-            {completed}/{total} steps complete. Yard works alone — connectors are optional.
-          </p>
+          <p className="lede">Yard works alone — connectors are optional.</p>
         </div>
-        <Link className="btn accent" to="/">Open Overview</Link>
-      </div>
-      <div className="grid" style={{ gridTemplateColumns: "1fr", gap: 12, maxWidth: 640 }}>
-        {steps.map((s, i) => (
-          <div className="card" key={s.id} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-            <div
-              className={`pill ${s.done ? "ok" : "stale"}`}
-              style={{ minWidth: 28, justifyContent: "center", textAlign: "center" }}
-            >
-              {s.done ? "✓" : i + 1}
-            </div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ marginBottom: 4 }}>{s.title}</h2>
-              <p className="lede">{s.body}</p>
-              {s.href && !s.done && (
-                <Link className="btn small" to={s.href} style={{ marginTop: 8, display: "inline-flex" }}>
-                  Continue
-                </Link>
-              )}
-            </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+          <div className="onboarding-progress" aria-label={`${completed} of ${total} steps complete`}>
+            {steps.map((s) => (
+              <span key={s.id} className={`dot${s.done ? " done" : ""}`} />
+            ))}
           </div>
-        ))}
+          <Link className="btn accent" to="/">Open Overview</Link>
+        </div>
       </div>
+      <div className="settings-stack">
+        <GroupedList>
+          {steps.map((s, i) => (
+            <GroupedRow
+              key={s.id}
+              icon={s.done ? <CheckIcon /> : <>{i + 1}</>}
+              tone={s.done ? "ok" : "accent"}
+              label={s.title}
+              description={s.body}
+              clickable={!s.done}
+              onClick={!s.done ? () => setFocusedIndex(i) : undefined}
+              trailing={s.done ? <span className="pill ok">Done</span> : undefined}
+            />
+          ))}
+        </GroupedList>
+      </div>
+      {focused && focusedIndex !== null && (
+        <StepPanel step={focused} index={focusedIndex} onClose={() => setFocusedIndex(null)} />
+      )}
     </>
   );
 }

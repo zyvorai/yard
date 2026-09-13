@@ -7,9 +7,7 @@ connectors — Yard must stay useful alone.
 This document is the product feature catalog and prioritized Next lane.
 Statuses: **Have** (shipped) · **Next** (scheduled) · **Later** (deferred).
 
-## First epics (locked)
-
-These two epics are the next implementation targets, in order:
+## Shipped epics
 
 ### Epic 1 — Live ops loop ✅
 
@@ -29,15 +27,22 @@ Close the gap between API and console for day-to-day registry work.
 - ~~Site edit / delete~~ **Have**
 - ~~Standalone work-order create UI~~ **Have**
 
-Shipped next-lane follow-ons in the same pass: automation create/delete + webhook
-action, telemetry sparklines, write RBAC, `/metrics`, ingest rate limit, OpenAPI expand.
+### Epic 3 — Bulk ops, map scale, incident playbooks ✅
+
+- ~~Bulk asset import/export (CSV/JSON)~~ **Have**
+- ~~MapLibre pin clustering~~ **Have**
+- ~~Incident severity policies + runbooks~~ **Have**
+
+Earlier follow-ons in the same lane: automation create/delete + webhook
+action, telemetry sparklines, write RBAC, `/metrics`, ingest rate limit,
+OpenAPI expand, onboarding, command palette, tablet nav.
 
 ```mermaid
 flowchart TD
   E1[Epic1 LiveOpsLoop] --> E2[Epic2 RegistryCompleteness]
-  E2 --> E3[AutomationEditorPlusWebhooks]
-  E3 --> E4[TelemetryHistoryCharts]
-  E4 --> E5[RBACAndOpenAPI]
+  E2 --> E3[Epic3 BulkMapRunbooks]
+  E3 --> E4[TelemetryTimeRange]
+  E4 --> E5[RBACInviteAndSDKs]
   E5 --> E6[NodraThenFleetOTA]
 ```
 
@@ -56,7 +61,7 @@ flowchart TD
 | Capabilities (signals, units, thresholds, writable) | Have (model + UI editor) |
 | External refs + manufacturer / model / serial / metadata | Have |
 | Asset relationships (parent/child, install history) | Later |
-| Bulk import/export (CSV/JSON) | Next |
+| Bulk import/export (CSV/JSON) | Have (`/api/v1/assets/export`, `/import` + Assets UI) |
 | Asset barcode / QR / NFC identity | Later |
 | Spare parts / BOM linked to asset | Later |
 | Warranties, purchase date, depreciation | Later |
@@ -74,7 +79,7 @@ flowchart TD
 | Site hierarchy (campus → building → floor → zone) | Later |
 | Geofences + enter/exit events | Later |
 | Indoor maps / floorplans | Later |
-| Clustering at large pin counts | Next |
+| Clustering at large pin counts | Have (MapLibre cluster layers) |
 | Directions / routing between sites | Later (logistics) |
 | Address geocoding | Later |
 
@@ -105,7 +110,7 @@ flowchart TD
 | Work order list + mark done | Have |
 | Work order create UI (standalone) | Have |
 | Richer priorities / due dates / assignees UI | Have |
-| Incident severity policies + runbooks | Next |
+| Incident severity policies + runbooks | Have (Admin policies; runbook on incident detail) |
 | SLA timers / escalation | Later |
 | Checklists / procedures on work orders | Later |
 | Parts used + time tracking | Later |
@@ -167,6 +172,7 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | --- | --- |
 | Login sessions (bcrypt) | Have |
 | Audit log + Admin token rotate | Have |
+| Severity policy editor (Admin) | Have |
 | Org-scoped queries / isolation tests | Have |
 | Roles / RBAC (viewer, operator, admin) | Have (write gate) / Next (invite UX) |
 | Invite users / password reset | Next |
@@ -226,4 +232,4 @@ Keep off the core model until explicitly requested:
 - Full CMMS / ERP replacement on day one
 
 Yard stays the **ops surface + registry**. Depth comes from connectors and
-the Next-lane epics above.
+the remaining Next-lane items above.

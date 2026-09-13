@@ -128,6 +128,35 @@ paths:
       responses:
         "200":
           description: deleted
+  /api/v1/assets/export:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: format
+          schema: { type: string, enum: [json, csv] }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: kind
+          schema: { type: string }
+        - in: query
+          name: health
+          schema: { type: string }
+      responses:
+        "200":
+          description: asset export (JSON or CSV attachment)
+  /api/v1/assets/import:
+    post:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: format
+          schema: { type: string, enum: [json, csv] }
+      responses:
+        "200":
+          description: import result with created/updated counts
   /api/v1/telemetry:
     get:
       security: [{ bearerAuth: [] }]
@@ -200,6 +229,38 @@ paths:
       responses:
         "200":
           description: updated or deleted
+  /api/v1/severity-policies:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: severity policies with runbooks
+    post:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: created
+  /api/v1/severity-policies/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: policy
+    patch:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: updated
+    delete:
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: deleted
   /api/v1/audit:
     get:
       security: [{ bearerAuth: [] }]

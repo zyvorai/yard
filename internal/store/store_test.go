@@ -92,3 +92,47 @@ func TestStaleHealth(t *testing.T) {
 		t.Fatalf("health=%s", got.Health)
 	}
 }
+
+func TestSeverityPolicyResolve(t *testing.T) {
+	st, err := Open("file:memdb-sev?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	org, _ := st.CreateOrganization(ctx, "Sev", "sev")
+	_ = st.CreateSeverityPolicy(ctx, &model.SeverityPolicy{
+		OrganizationID: org.ID, Name: "Temp", MatchKind: "capability", MatchValue: "temperature",
+		Severity: "critical", Runbook: "cool it", Priority: 100,
+	})
+	_ = st.CreateSeverityPolicy(ctx, &model.SeverityPolicy{
+		OrganizationID: org.ID, Name: "Default", MatchKind: "default",
+		Severity: "info", Runbook: "default rb", Priority: 0,
+	})
+	sev, rb := st.ResolveSeverity(ctx, org.ID, "temperature", "")
+	if sev != "critical" || rb != "cool it" {
+		t.Fatalf("temp: %s %q", sev, rb)
+	}
+	sev, rb = st.ResolveSeverity(ctx, org.ID, "humidity", "")
+	if sev != "info" || rb != "default rb" {
+		t.Fatalf("default: %s %q", sev, rb)
+	}
+}
+
+func TestImportAssetRow(t *testing.T) {
+	st, err := Open("file:memdb-import?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	org, _ := st.CreateOrganization(ctx, "Imp", "imp")
+	a, action, err := st.ImportAssetRow(ctx, org.ID, &model.Asset{Name: "Pump", ExternalRef: "P-IMP", Kind: "machine"})
+	if err != nil || action != "created" {
+		t.Fatalf("create: %v %s", err, action)
+	}
+	a2, action, err := st.ImportAssetRow(ctx, org.ID, &model.Asset{Name: "Pump 2", ExternalRef: "P-IMP", Kind: "machine"})
+	if err != nil || action != "updated" || a2.ID != a.ID {
+		t.Fatalf("update: %v %s %#v", err, action, a2)
+	}
+}

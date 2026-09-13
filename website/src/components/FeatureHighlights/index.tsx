@@ -13,8 +13,8 @@ const FeatureList: FeatureItem[] = [
   {
     title: 'Asset registry',
     description:
-      'Devices, vehicles, machines, sensors, and equipment — with capabilities, sites, and health that stays honest when data goes stale.',
-    to: '/docs/core-concepts/architecture',
+      'Devices, vehicles, machines, sensors, and equipment — with capabilities, sites, health, and CSV/JSON bulk import-export.',
+    to: '/docs/guides/console',
   },
   {
     title: 'Live ops loop',
@@ -25,14 +25,14 @@ const FeatureList: FeatureItem[] = [
   {
     title: 'Sites & map',
     description:
-      'Factories, warehouses, and customer locations on a full-bleed MapLibre map with dark basemap and glass detail panel.',
-    to: '/docs/core-concepts/architecture',
+      'Factories, warehouses, and customer locations on a full-bleed MapLibre map with clustering, dark basemap, and glass detail panel.',
+    to: '/docs/guides/console',
   },
   {
     title: 'Incidents & work',
     description:
-      'Threshold and stale automations open incidents. Standalone work orders close the loop on the asset timeline.',
-    to: '/docs/getting-started/quickstart',
+      'Severity policies attach runbooks when automations open incidents. Work orders close the loop on the asset timeline.',
+    to: '/docs/guides/console',
   },
   {
     title: 'Automations & webhooks',

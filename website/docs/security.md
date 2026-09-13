@@ -17,7 +17,8 @@ evaluation only**. Change them before any shared deployment.
 
 - Console login issues a bearer session (bcrypt password hash)
 - Write operations (create/update/delete assets, sites, work orders,
-  automations, actions) require role `admin` or `operator`
+  automations, actions, severity policies, asset import) require role
+  `admin` or `operator`
 - Viewers can read but not mutate
 
 ## Connector tokens
@@ -36,4 +37,5 @@ stored as SHA-256 hashes. Treat plaintext tokens written to
 ## Audit
 
 Mutating console and automation actions write to the org audit log
-(Administration → audit).
+(Administration → audit), including asset import and severity policy
+changes.

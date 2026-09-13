@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import Map, { Marker, NavigationControl, type MapRef } from "react-map-gl/maplibre";
+import Map, { Layer, NavigationControl, Source, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";
+import type { GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_STYLE_DARK, MAP_STYLE_LIGHT, useTheme } from "../lib/theme";
 
@@ -22,16 +23,29 @@ type Props = {
   interactive?: boolean;
 };
 
-function markerClass(pin: MapPin, selected: boolean) {
-  const health = pin.entity === "site" ? "site" : (pin.health || "unknown");
-  return `map-marker ${health}${selected ? " selected" : ""}`;
-}
-
 export default function YardMap({ pins, selectedId, onSelect }: Props) {
   const { theme } = useTheme();
   const mapRef = useRef<MapRef>(null);
   const userMoved = useRef(false);
   const style = theme === "dark" ? MAP_STYLE_DARK : MAP_STYLE_LIGHT;
+
+  const geojson = useMemo(() => ({
+    type: "FeatureCollection" as const,
+    features: pins.map((p) => ({
+      type: "Feature" as const,
+      properties: {
+        id: p.id,
+        name: p.name,
+        kind: p.kind,
+        entity: p.entity,
+        tone: p.entity === "site" ? "site" : (p.health || "unknown"),
+      },
+      geometry: {
+        type: "Point" as const,
+        coordinates: [p.longitude, p.latitude] as [number, number],
+      },
+    })),
+  }), [pins]);
 
   const initialView = useMemo(() => {
     if (!pins.length) {
@@ -77,6 +91,26 @@ export default function YardMap({ pins, selectedId, onSelect }: Props) {
     });
   }, [selectedId, pins]);
 
+  const onClick = useCallback((e: MapLayerMouseEvent) => {
+    const feat = e.features?.[0];
+    if (!feat || feat.geometry.type !== "Point") return;
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const coords = feat.geometry.coordinates as [number, number];
+    if (feat.properties?.cluster) {
+      const source = map.getSource("pins") as GeoJSONSource | undefined;
+      const clusterId = feat.properties.cluster_id as number;
+      if (!source || clusterId == null) return;
+      void source.getClusterExpansionZoom(clusterId).then((zoom) => {
+        map.easeTo({ center: coords, zoom, duration: 450 });
+      });
+      return;
+    }
+    const id = String(feat.properties?.id || "");
+    const pin = pins.find((p) => p.id === id);
+    if (pin) onSelect(pin);
+  }, [onSelect, pins]);
+
   return (
     <div className="map-canvas">
       <Map
@@ -84,30 +118,64 @@ export default function YardMap({ pins, selectedId, onSelect }: Props) {
         initialViewState={initialView}
         mapStyle={style}
         style={{ width: "100%", height: "100%" }}
+        interactiveLayerIds={["clusters", "unclustered-point"]}
+        onClick={onClick}
         onDragStart={() => { userMoved.current = true; }}
         onZoomStart={() => { userMoved.current = true; }}
+        cursor="pointer"
       >
         <NavigationControl position="bottom-right" showCompass={false} />
-        {pins.map((pin, i) => (
-          <Marker
-            key={pin.id}
-            longitude={pin.longitude}
-            latitude={pin.latitude}
-            anchor="center"
-            onClick={(e) => {
-              e.originalEvent.stopPropagation();
-              onSelect(pin);
+        <Source
+          id="pins"
+          type="geojson"
+          data={geojson}
+          cluster
+          clusterMaxZoom={14}
+          clusterRadius={56}
+        >
+          <Layer
+            id="clusters"
+            type="circle"
+            filter={["has", "point_count"]}
+            paint={{
+              "circle-color": ["step", ["get", "point_count"], "#0a84ff", 8, "#ff9f0a", 25, "#ff5a15"],
+              "circle-radius": ["step", ["get", "point_count"], 18, 8, 24, 25, 32],
+              "circle-stroke-width": 2,
+              "circle-stroke-color": "#ffffff",
             }}
-          >
-            <div
-              className={markerClass(pin, pin.id === selectedId)}
-              style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
-              title={`${pin.name} (${pin.kind})`}
-              role="button"
-              aria-label={pin.name}
-            />
-          </Marker>
-        ))}
+          />
+          <Layer
+            id="cluster-count"
+            type="symbol"
+            filter={["has", "point_count"]}
+            layout={{
+              "text-field": ["get", "point_count_abbreviated"],
+              "text-size": 12,
+            }}
+            paint={{ "text-color": "#ffffff" }}
+          />
+          <Layer
+            id="unclustered-point"
+            type="circle"
+            filter={["!", ["has", "point_count"]]}
+            paint={{
+              "circle-color": [
+                "match",
+                ["get", "tone"],
+                "healthy", "#34c759",
+                "degraded", "#ff9f0a",
+                "warning", "#ff9f0a",
+                "critical", "#ff3b30",
+                "stale", "#8e8e97",
+                "site", "#0a84ff",
+                "#8e8e97",
+              ],
+              "circle-radius": ["case", ["==", ["get", "id"], selectedId || ""], 10, 7],
+              "circle-stroke-width": ["case", ["==", ["get", "id"], selectedId || ""], 3, 2],
+              "circle-stroke-color": ["case", ["==", ["get", "id"], selectedId || ""], "#ff5a15", "#ffffff"],
+            }}
+          />
+        </Source>
       </Map>
     </div>
   );

@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, Asset, EventItem, Site, WorkOrder } from "../lib/api";
+import { api, Asset, downloadAuth, EventItem, Site, WorkOrder } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
 
 type Cap = { id?: string; name: string; kind?: string; unit: string; min?: number; max?: number; writable?: boolean };
@@ -33,6 +33,8 @@ export default function Assets() {
   const [capEdit, setCapEdit] = useState(false);
   const [capRows, setCapRows] = useState<Cap[]>([]);
   const [params] = useSearchParams();
+  const [ioMsg, setIoMsg] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
     const qs = new URLSearchParams();
@@ -161,6 +163,36 @@ export default function Assets() {
     await load();
   }
 
+  async function exportAssets(format: "json" | "csv") {
+    setIoMsg("");
+    try {
+      const qs = new URLSearchParams({ format });
+      if (q) qs.set("q", q);
+      if (kind) qs.set("kind", kind);
+      await downloadAuth(`/api/v1/assets/export?${qs}`, `assets.${format}`);
+      setIoMsg(`Exported ${format.toUpperCase()}.`);
+    } catch (ex) {
+      setIoMsg(ex instanceof Error ? ex.message : "export failed");
+    }
+  }
+
+  async function importFile(file: File) {
+    setIoMsg("");
+    const isCSV = file.name.toLowerCase().endsWith(".csv") || file.type.includes("csv");
+    try {
+      const text = await file.text();
+      const res = await api<{ created: number; updated: number }>(`/api/v1/assets/import?format=${isCSV ? "csv" : "json"}`, {
+        method: "POST",
+        headers: { "Content-Type": isCSV ? "text/csv" : "application/json" },
+        body: text,
+      });
+      setIoMsg(`Import: ${res.created} created, ${res.updated} updated.`);
+      await load();
+    } catch (ex) {
+      setIoMsg(ex instanceof Error ? ex.message : "import failed");
+    }
+  }
+
   return (
     <>
       <div className="topbar">
@@ -174,9 +206,24 @@ export default function Assets() {
             <option value="">All kinds</option>
             {kinds.map((k) => <option key={k}>{k}</option>)}
           </select>
+          <button type="button" className="btn ghost" onClick={() => exportAssets("csv")}>Export CSV</button>
+          <button type="button" className="btn ghost" onClick={() => exportAssets("json")}>Export JSON</button>
+          <button type="button" className="btn ghost" onClick={() => fileRef.current?.click()}>Import</button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.json,application/json,text/csv"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void importFile(f);
+              e.target.value = "";
+            }}
+          />
           <button type="button" className="btn accent" onClick={startCreate}>Add asset</button>
         </div>
       </div>
+      {ioMsg && <p className="lede" style={{ marginBottom: 12 }}>{ioMsg}</p>}
       {formOpen && (
         <form className="card form-card" onSubmit={save} style={{ marginBottom: 16 }}>
           <h2>{editing ? "Edit asset" : "New asset"}</h2>

@@ -4,16 +4,18 @@ import Link from '@docusaurus/Link';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import Layout from '@theme/Layout';
 import Heading from '@theme/Heading';
-import FeatureHighlights from '@site/src/components/FeatureHighlights';
+import FeatureScrollStory from '@site/src/components/FeatureScrollStory';
 import ScreenshotStrip from '@site/src/components/ScreenshotStrip';
 import Reveal from '@site/src/components/Reveal';
+import {useScrollProgress} from '@site/src/hooks/useScrollProgress';
 
 import styles from './index.module.css';
 
 function HomepageHeader() {
   const heroShot = useBaseUrl('/00-overview.png');
+  const heroRef = useScrollProgress<HTMLElement>();
   return (
-    <header className={clsx('hero hero--primary', styles.heroBanner)}>
+    <header ref={heroRef} className={clsx('hero hero--primary', styles.heroBanner)}>
       <div className="container">
         <div className={styles.heroGrid}>
           <div>
@@ -88,16 +90,20 @@ function TrustBand() {
   return (
     <section className={styles.trust}>
       <div className="container">
+        <Reveal className={styles.statLines}>
+          <p className={styles.statLine}>Apache-2.0.</p>
+          <p className={styles.statLine}>No lock-in.</p>
+          <p className={styles.statLine}>Every connector optional.</p>
+        </Reveal>
         <Reveal className={styles.trustGrid}>
           <div>
             <Heading as="h3" className={styles.sectionHeading}>
               Open, and ready to ship
             </Heading>
             <p>
-              Apache-2.0. SQLite by default, Postgres when you need it. Real CI
-              on every push (Go tests + console build). Sessions, hashed
-              connector tokens, write RBAC, ingest rate limits, and{' '}
-              <code>/metrics</code>.
+              SQLite by default, Postgres when you need it. Real CI on every
+              push (Go tests + console build). Sessions, hashed connector
+              tokens, write RBAC, ingest rate limits, and <code>/metrics</code>.
             </p>
             <Link to="/docs/security">Read the security model →</Link>
           </div>
@@ -149,9 +155,7 @@ export default function Home(): ReactNode {
       <HomepageHeader />
       <main>
         <ProblemStatement />
-        <Reveal>
-          <FeatureHighlights />
-        </Reveal>
+        <FeatureScrollStory />
         <Reveal>
           <ScreenshotStrip />
         </Reveal>

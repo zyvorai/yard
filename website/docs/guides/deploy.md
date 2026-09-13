@@ -47,7 +47,8 @@ YARD_URL=http://HOST:18080 ./scripts/verify-remote.sh
 ```
 
 Checks health, login, overview, assets, connectors, and (when a simulator
-token is available) the temperature → incident gate.
+token is available) the temperature → incident gate (severity policy +
+runbook attached).
 
 ## Compose
 
@@ -55,3 +56,7 @@ token is available) the temperature → incident gate.
 docker compose up --build
 docker compose --profile postgres up --build
 ```
+
+After deploy, useful console paths: **Assets** (bulk CSV/JSON), **Map**
+(clustering), **Administration** (severity policies). See
+[Console features](./console).

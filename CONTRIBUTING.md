@@ -23,10 +23,12 @@ make sim
 - Device Agent owns hardware discovery.
 - Nodra owns industrial protocol semantics.
 - Zyvor Fleet owns remote lifecycle.
-- Yard owns the asset registry, sites, incidents, work orders, and UI.
+- Yard owns the asset registry, sites, incidents, work orders, severity
+  policies / runbooks, and UI (including bulk asset IO and map clustering).
 
 ## Pull requests
 
-Include tests for ingest, tenant isolation, or workflow changes.
+Include tests for ingest, tenant isolation, workflow, or policy changes.
 Keep the console system-font based (no CDN fonts) and reserve orange for
-primary actions.
+primary actions. Update `docs/ROADMAP.md` and the Docusaurus site under
+`website/docs/` when you ship user-visible features.

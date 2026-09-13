@@ -31,6 +31,22 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Authenticated download (CSV/JSON export). */
+export async function downloadAuth(path: string, filename: string) {
+  const headers = new Headers({ Accept: "*/*" });
+  const tok = getToken();
+  if (tok) headers.set("Authorization", `Bearer ${tok}`);
+  const res = await fetch(path, { headers });
+  if (!res.ok) throw new Error(await res.text() || res.statusText);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export type Asset = {
   id: string;
   name: string;
@@ -65,9 +81,21 @@ export type Incident = {
   owner: string;
   summary: string;
   resolution: string;
+  runbook?: string;
   asset_id?: string;
   opened_at: string;
   resolved_at?: string;
+};
+
+export type SeverityPolicy = {
+  id: string;
+  name: string;
+  match_kind: string;
+  match_value: string;
+  severity: string;
+  runbook: string;
+  priority: number;
+  created_at: string;
 };
 
 export type WorkOrder = {

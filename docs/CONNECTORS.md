@@ -85,3 +85,10 @@ actions for Device Agent today.
 
 A future adapter maps MQTT payloads onto the same HTTP ingest contract.
 Topic and payload mapping belong in the adapter, not in the core schema.
+
+## Related product surfaces
+
+Bulk asset CSV/JSON import-export, MapLibre clustering, and incident
+severity policies / runbooks are first-party Yard features (not connectors).
+See the docs site [Console features](https://zyvorai.github.io/yard/docs/guides/console)
+and [docs/ROADMAP.md](./ROADMAP.md).

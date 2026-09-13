@@ -1,7 +1,53 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, Overview as Ov } from "../lib/api";
 import { fmt } from "../components/Shell";
+import { GroupedList, GroupedRow } from "../components/GroupedList";
 import { notifyCritical, useYardStream } from "../lib/stream";
+
+function EventIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3l9 16H3l9-16ZM12 10v4M12 17.5v.01"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ActivityIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 12h4l2 7 4-14 2 7h4"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function severityTone(sev?: string): "ok" | "warn" | "bad" | "info" | "stale" {
+  switch (sev) {
+    case "critical":
+      return "bad";
+    case "warning":
+    case "degraded":
+      return "warn";
+    case "info":
+      return "info";
+    case "ok":
+    case "healthy":
+      return "ok";
+    default:
+      return "stale";
+  }
+}
 
 export default function Overview() {
   const [data, setData] = useState<Ov | null>(null);
@@ -54,28 +100,46 @@ export default function Overview() {
         <div className="card"><h2>Work orders</h2><div className="metric">{data.open_work_orders}<small>{data.active_connectors} connectors</small></div></div>
       </div>
       <div className="grid split" style={{ marginTop: 16 }}>
-        <div className="card">
-          <h2>Recent events</h2>
-          {data.recent_events?.length ? (
-            <table><tbody>
-              {data.recent_events.map((e) => (
-                <tr key={e.id}><td>{e.title}</td><td className="pill">{e.severity}</td><td>{fmt(e.created_at)}</td></tr>
-              ))}
-            </tbody></table>
-          ) : (
-            <p className="empty">
-              No events yet. Start the <a href="/onboarding">Get started</a> path or run the simulator.
-            </p>
-          )}
+        <div>
+          <GroupedList title="Recent events">
+            {data.recent_events?.length ? (
+              data.recent_events.map((e) => (
+                <GroupedRow
+                  key={e.id}
+                  icon={<EventIcon />}
+                  tone={severityTone(e.severity)}
+                  label={e.title}
+                  description={fmt(e.created_at)}
+                  trailing={<span className={`pill ${severityTone(e.severity)}`}>{e.severity}</span>}
+                />
+              ))
+            ) : (
+              <div className="settings-row">
+                <span className="row-body">
+                  <span className="row-description">
+                    No events yet. Start the <a href="/onboarding">Get started</a> path or run the simulator.
+                  </span>
+                </span>
+              </div>
+            )}
+          </GroupedList>
         </div>
-        <div className="card">
-          <h2>Activity</h2>
-          {data.recent_activity?.map((a) => (
-            <p key={a.id} style={{ margin: "10px 0", fontSize: 13 }}>
-              <strong>{a.action}</strong> · {a.actor}<br />
-              <span className="lede">{a.detail || a.object}</span>
-            </p>
-          ))}
+        <div>
+          <GroupedList title="Activity">
+            {data.recent_activity?.length ? (
+              data.recent_activity.map((a) => (
+                <GroupedRow
+                  key={a.id}
+                  icon={<ActivityIcon />}
+                  tone="stale"
+                  label={<>{a.action} <span className="row-description" style={{ display: "inline", fontWeight: 500 }}>· {a.actor}</span></>}
+                  description={a.detail || a.object}
+                />
+              ))
+            ) : (
+              <div className="settings-row"><span className="row-body"><span className="row-description">No activity yet.</span></span></div>
+            )}
+          </GroupedList>
         </div>
       </div>
     </>

@@ -11,7 +11,7 @@ type Shot = {
 
 const SHOTS: Shot[] = [
   {src: '/00-overview.png', alt: 'Yard Overview — health, incidents, activity'},
-  {src: '/03-map.png', alt: 'Yard Map — MapLibre full-bleed with asset pins'},
+  {src: '/03-map.png', alt: 'Yard Map — MapLibre full-bleed with clustered pins'},
   {src: '/04-telemetry.png', alt: 'Yard Telemetry — fresh measurements and sparklines'},
 ];
 

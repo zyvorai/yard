@@ -76,3 +76,6 @@ Actions against them return `unsupported` rather than a fake success.
 
 Full contract notes live in the repo at
 [docs/CONNECTORS.md](https://github.com/zyvorai/yard/blob/master/docs/CONNECTORS.md).
+
+For console bulk import, map clustering, and severity runbooks, see
+[Console features](./console).

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -144,5 +145,69 @@ func TestConnectorAuthRequired(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 401 {
 		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestAssetExportImportAndSeverityPolicies(t *testing.T) {
+	st, err := store.Open("file:api-bulk?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := seed.Bootstrap(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(New(st, nil).Handler())
+	defer ts.Close()
+
+	body, _ := json.Marshal(map[string]string{"email": seed.DemoEmail, "password": seed.DemoPassword})
+	resp, err := http.Post(ts.URL+"/api/v1/auth/login", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var login struct{ Token string }
+	_ = json.NewDecoder(resp.Body).Decode(&login)
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/assets/export?format=csv", nil)
+	req.Header.Set("Authorization", "Bearer "+login.Token)
+	eresp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eresp.Body.Close()
+	if eresp.StatusCode != 200 {
+		t.Fatalf("export %d", eresp.StatusCode)
+	}
+	csvBody, _ := io.ReadAll(eresp.Body)
+	if !bytes.Contains(csvBody, []byte("external_ref")) {
+		t.Fatalf("csv missing header")
+	}
+
+	imp := `[{"name":"Bulk Pump","external_ref":"BULK-1","kind":"machine"}]`
+	ireq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/assets/import?format=json", bytes.NewReader([]byte(imp)))
+	ireq.Header.Set("Authorization", "Bearer "+login.Token)
+	ireq.Header.Set("Content-Type", "application/json")
+	iresp, err := http.DefaultClient.Do(ireq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer iresp.Body.Close()
+	if iresp.StatusCode != 200 {
+		b, _ := io.ReadAll(iresp.Body)
+		t.Fatalf("import %d %s", iresp.StatusCode, b)
+	}
+
+	preq, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/severity-policies", nil)
+	preq.Header.Set("Authorization", "Bearer "+login.Token)
+	presp, err := http.DefaultClient.Do(preq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer presp.Body.Close()
+	var policies []map[string]any
+	_ = json.NewDecoder(presp.Body).Decode(&policies)
+	if len(policies) < 1 {
+		t.Fatal("expected seeded severity policies")
 	}
 }

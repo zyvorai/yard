@@ -57,6 +57,12 @@ export default function Incidents() {
               <h1 style={{ fontSize: 22 }}>{sel.title}</h1>
               <p className="lede">{sel.summary}</p>
               <p><Health value={sel.severity} /> {sel.status} · {sel.owner || "unassigned"}</p>
+              {sel.runbook && (
+                <div style={{ marginTop: 12 }}>
+                  <h2 style={{ fontSize: 15, marginBottom: 6 }}>Runbook</h2>
+                  <pre className="runbook">{sel.runbook}</pre>
+                </div>
+              )}
               {sel.resolution && <p className="lede">Resolution: {sel.resolution}</p>}
               <div className="row-actions" style={{ marginTop: 16 }}>
                 <button className="btn small" onClick={ack}>Acknowledge</button>

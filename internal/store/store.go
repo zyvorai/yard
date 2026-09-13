@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS incidents (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, asset_id TEXT, site_id TEXT,
   title TEXT NOT NULL, severity TEXT NOT NULL, status TEXT NOT NULL, owner TEXT NOT NULL DEFAULT '',
   summary TEXT NOT NULL DEFAULT '', resolution TEXT NOT NULL DEFAULT '',
+  runbook TEXT NOT NULL DEFAULT '',
   opened_at TEXT NOT NULL, resolved_at TEXT
 );
 CREATE TABLE IF NOT EXISTS work_orders (
@@ -171,12 +172,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL,
   object TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS severity_policies (
+  id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, name TEXT NOT NULL,
+  match_kind TEXT NOT NULL, match_value TEXT NOT NULL DEFAULT '',
+  severity TEXT NOT NULL, runbook TEXT NOT NULL DEFAULT '',
+  priority INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+);
 `)
 	if err != nil {
 		return err
 	}
-	// Best-effort upgrade for DBs created before config column.
+	// Best-effort upgrades for DBs created before newer columns.
 	_, _ = s.DB.Exec(`ALTER TABLE automations ADD COLUMN config TEXT NOT NULL DEFAULT '{}'`)
+	_, _ = s.DB.Exec(`ALTER TABLE incidents ADD COLUMN runbook TEXT NOT NULL DEFAULT ''`)
 	return nil
 }
 
@@ -676,19 +684,19 @@ func (s *Store) CreateIncident(ctx context.Context, inc *model.Incident) error {
 	if inc.Status == "" {
 		inc.Status = "open"
 	}
-	_, err := s.exec(ctx, `INSERT INTO incidents(id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,opened_at,resolved_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, inc.ID, inc.OrganizationID, inc.AssetID, inc.SiteID, inc.Title, inc.Severity, inc.Status, inc.Owner, inc.Summary, inc.Resolution, inc.OpenedAt.Format(time.RFC3339Nano), ts(inc.ResolvedAt))
+	_, err := s.exec(ctx, `INSERT INTO incidents(id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,runbook,opened_at,resolved_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, inc.ID, inc.OrganizationID, inc.AssetID, inc.SiteID, inc.Title, inc.Severity, inc.Status, inc.Owner, inc.Summary, inc.Resolution, inc.Runbook, inc.OpenedAt.Format(time.RFC3339Nano), ts(inc.ResolvedAt))
 	return err
 }
 
 func (s *Store) UpdateIncident(ctx context.Context, inc *model.Incident) error {
-	_, err := s.exec(ctx, `UPDATE incidents SET title=?, severity=?, status=?, owner=?, summary=?, resolution=?, resolved_at=? WHERE id=? AND organization_id=?`,
-		inc.Title, inc.Severity, inc.Status, inc.Owner, inc.Summary, inc.Resolution, ts(inc.ResolvedAt), inc.ID, inc.OrganizationID)
+	_, err := s.exec(ctx, `UPDATE incidents SET title=?, severity=?, status=?, owner=?, summary=?, resolution=?, runbook=?, resolved_at=? WHERE id=? AND organization_id=?`,
+		inc.Title, inc.Severity, inc.Status, inc.Owner, inc.Summary, inc.Resolution, inc.Runbook, ts(inc.ResolvedAt), inc.ID, inc.OrganizationID)
 	return err
 }
 
 func (s *Store) GetIncident(ctx context.Context, orgID, id string) (*model.Incident, error) {
-	row := s.queryRow(ctx, `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,opened_at,resolved_at FROM incidents WHERE organization_id=? AND id=?`, orgID, id)
+	row := s.queryRow(ctx, `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,COALESCE(runbook,''),opened_at,resolved_at FROM incidents WHERE organization_id=? AND id=?`, orgID, id)
 	return scanIncident(row)
 }
 
@@ -696,7 +704,7 @@ func scanIncident(row scannable) (*model.Incident, error) {
 	var inc model.Incident
 	var asset, site, resolved sql.NullString
 	var opened string
-	if err := row.Scan(&inc.ID, &inc.OrganizationID, &asset, &site, &inc.Title, &inc.Severity, &inc.Status, &inc.Owner, &inc.Summary, &inc.Resolution, &opened, &resolved); err != nil {
+	if err := row.Scan(&inc.ID, &inc.OrganizationID, &asset, &site, &inc.Title, &inc.Severity, &inc.Status, &inc.Owner, &inc.Summary, &inc.Resolution, &inc.Runbook, &opened, &resolved); err != nil {
 		return nil, err
 	}
 	inc.AssetID, inc.SiteID = nullS(asset), nullS(site)
@@ -706,7 +714,7 @@ func scanIncident(row scannable) (*model.Incident, error) {
 }
 
 func (s *Store) ListIncidents(ctx context.Context, orgID, status string) ([]model.Incident, error) {
-	q := `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,opened_at,resolved_at FROM incidents WHERE organization_id=?`
+	q := `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,COALESCE(runbook,''),opened_at,resolved_at FROM incidents WHERE organization_id=?`
 	args := []any{orgID}
 	if status != "" {
 		q += ` AND status=?`
@@ -733,7 +741,7 @@ func (s *Store) ListIncidents(ctx context.Context, orgID, status string) ([]mode
 }
 
 func (s *Store) OpenIncidentByDedupe(ctx context.Context, orgID, title string, assetID *string) (*model.Incident, bool, error) {
-	q := `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,opened_at,resolved_at FROM incidents WHERE organization_id=? AND title=? AND status IN ('open','ack')`
+	q := `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,COALESCE(runbook,''),opened_at,resolved_at FROM incidents WHERE organization_id=? AND title=? AND status IN ('open','ack')`
 	if assetID != nil {
 		q += ` AND asset_id=?`
 		row := s.queryRow(ctx, q, orgID, title, *assetID)
@@ -1170,4 +1178,140 @@ func (s *Store) Overview(ctx context.Context, orgID string) (*model.Overview, er
 	ov.RecentEvents, _ = s.ListEvents(ctx, orgID, 8)
 	ov.RecentActivity, _ = s.ListAudit(ctx, orgID, 8)
 	return ov, nil
+}
+
+func (s *Store) CreateSeverityPolicy(ctx context.Context, p *model.SeverityPolicy) error {
+	if p.ID == "" {
+		p.ID = idgen.New("sev")
+	}
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = time.Now().UTC()
+	}
+	if p.MatchKind == "" {
+		p.MatchKind = "default"
+	}
+	if p.Severity == "" {
+		p.Severity = "warning"
+	}
+	_, err := s.exec(ctx, `INSERT INTO severity_policies(id,organization_id,name,match_kind,match_value,severity,runbook,priority,created_at)
+VALUES(?,?,?,?,?,?,?,?,?)`, p.ID, p.OrganizationID, p.Name, p.MatchKind, p.MatchValue, p.Severity, p.Runbook, p.Priority, p.CreatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) UpdateSeverityPolicy(ctx context.Context, p *model.SeverityPolicy) error {
+	_, err := s.exec(ctx, `UPDATE severity_policies SET name=?, match_kind=?, match_value=?, severity=?, runbook=?, priority=? WHERE organization_id=? AND id=?`,
+		p.Name, p.MatchKind, p.MatchValue, p.Severity, p.Runbook, p.Priority, p.OrganizationID, p.ID)
+	return err
+}
+
+func (s *Store) DeleteSeverityPolicy(ctx context.Context, orgID, id string) error {
+	_, err := s.exec(ctx, `DELETE FROM severity_policies WHERE organization_id=? AND id=?`, orgID, id)
+	return err
+}
+
+func (s *Store) GetSeverityPolicy(ctx context.Context, orgID, id string) (*model.SeverityPolicy, error) {
+	row := s.queryRow(ctx, `SELECT id,organization_id,name,match_kind,match_value,severity,runbook,priority,created_at FROM severity_policies WHERE organization_id=? AND id=?`, orgID, id)
+	return scanSeverityPolicy(row)
+}
+
+func scanSeverityPolicy(row scannable) (*model.SeverityPolicy, error) {
+	var p model.SeverityPolicy
+	var created string
+	if err := row.Scan(&p.ID, &p.OrganizationID, &p.Name, &p.MatchKind, &p.MatchValue, &p.Severity, &p.Runbook, &p.Priority, &created); err != nil {
+		return nil, err
+	}
+	p.CreatedAt = parseTime(created)
+	return &p, nil
+}
+
+func (s *Store) ListSeverityPolicies(ctx context.Context, orgID string) ([]model.SeverityPolicy, error) {
+	rows, err := s.query(ctx, `SELECT id,organization_id,name,match_kind,match_value,severity,runbook,priority,created_at FROM severity_policies WHERE organization_id=? ORDER BY priority DESC, name ASC`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.SeverityPolicy
+	for rows.Next() {
+		p, err := scanSeverityPolicy(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *p)
+	}
+	if out == nil {
+		out = []model.SeverityPolicy{}
+	}
+	return out, rows.Err()
+}
+
+// ResolveSeverity picks the highest-priority matching policy for capability and/or automation name.
+func (s *Store) ResolveSeverity(ctx context.Context, orgID, capability, automationName string) (severity, runbook string) {
+	policies, err := s.ListSeverityPolicies(ctx, orgID)
+	if err != nil || len(policies) == 0 {
+		return "warning", ""
+	}
+	var fallback *model.SeverityPolicy
+	for i := range policies {
+		p := &policies[i]
+		switch p.MatchKind {
+		case "capability":
+			if capability != "" && p.MatchValue == capability {
+				return p.Severity, p.Runbook
+			}
+		case "automation":
+			if automationName != "" && p.MatchValue == automationName {
+				return p.Severity, p.Runbook
+			}
+		case "default":
+			if fallback == nil {
+				fallback = p
+			}
+		}
+	}
+	if fallback != nil {
+		return fallback.Severity, fallback.Runbook
+	}
+	return "warning", ""
+}
+
+// CountSeverityPolicies returns how many policies exist for an org (for seed ensure).
+func (s *Store) CountSeverityPolicies(ctx context.Context, orgID string) (int, error) {
+	var n int
+	err := s.queryRow(ctx, `SELECT COUNT(*) FROM severity_policies WHERE organization_id=?`, orgID).Scan(&n)
+	return n, err
+}
+
+// ImportAssetRow upserts one asset by external_ref when set, otherwise inserts a new row.
+func (s *Store) ImportAssetRow(ctx context.Context, orgID string, in *model.Asset) (*model.Asset, string, error) {
+	in.OrganizationID = orgID
+	if in.Kind == "" {
+		in.Kind = "equipment"
+	}
+	if in.Status == "" {
+		in.Status = "active"
+	}
+	if in.Health == "" {
+		in.Health = "unknown"
+	}
+	if in.StaleAfterSec <= 0 {
+		in.StaleAfterSec = 90
+	}
+	if in.Metadata == "" {
+		in.Metadata = "{}"
+	}
+	action := "created"
+	if in.ExternalRef != "" {
+		if existing, err := s.AssetByRef(ctx, orgID, in.ExternalRef); err == nil && existing != nil {
+			in.ID = existing.ID
+			in.CreatedAt = existing.CreatedAt
+			if in.Health == "unknown" && existing.Health != "" {
+				in.Health = existing.Health
+			}
+			action = "updated"
+		}
+	}
+	if err := s.UpsertAsset(ctx, in); err != nil {
+		return nil, "", err
+	}
+	return in, action, nil
 }

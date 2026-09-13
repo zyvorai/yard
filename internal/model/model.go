@@ -107,8 +107,22 @@ type Incident struct {
 	Owner          string     `json:"owner"`
 	Summary        string     `json:"summary"`
 	Resolution     string     `json:"resolution"`
+	Runbook        string     `json:"runbook,omitempty"`
 	OpenedAt       time.Time  `json:"opened_at"`
 	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
+}
+
+// SeverityPolicy maps automation/capability matches to severity + runbook text.
+type SeverityPolicy struct {
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id"`
+	Name           string    `json:"name"`
+	MatchKind      string    `json:"match_kind"`  // capability | automation | default
+	MatchValue     string    `json:"match_value"` // capability name, automation name, or ""
+	Severity       string    `json:"severity"`    // info | warning | critical
+	Runbook        string    `json:"runbook"`
+	Priority       int       `json:"priority"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type WorkOrder struct {

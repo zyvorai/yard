@@ -13,11 +13,16 @@ runs alone.
 ## Data model
 
 Organization · Site · Asset · Capability · Observation · Event ·
-WorkOrder · Incident · ActionRequest · Connector · Automation
+WorkOrder · Incident · SeverityPolicy · ActionRequest · Connector ·
+Automation
 
 Every observation stores **source**, **unit**, **observed_at**,
 **received_at**, and **quality**. Offline data is marked stale rather than
 healthy.
+
+**SeverityPolicy** rows map `capability`, `automation`, or `default`
+matches (ordered by priority) to incident severity and runbook text when
+automations open incidents.
 
 Remote actions require a session, expire, carry an idempotency key, and
 record an outcome. Connectors advertise the actions they can execute.
@@ -43,6 +48,13 @@ the operations surface: health, incidents, and work orders.
   Overview refresh
 - Console pages subscribe to `GET /api/v1/stream` (SSE)
 - Automations can open incidents, notify (audit), or call a webhook
+- Opened incidents inherit severity + runbook from severity policies
+
+## Registry and map
+
+- Assets support create/edit/delete, capability editing, and **bulk
+  CSV/JSON import-export**
+- MapLibre map uses **clustered** pin layers for dense sites/assets
 
 ## Storage
 

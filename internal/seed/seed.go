@@ -37,6 +37,7 @@ func Bootstrap(ctx context.Context, st *store.Store) (*Result, error) {
 		if err != nil {
 			return nil, err
 		}
+		_ = EnsureSeverityPolicies(ctx, st, u.OrganizationID)
 		return &Result{User: u}, nil
 	}
 	org, err := st.CreateOrganization(ctx, "Northwind Operations", "northwind")
@@ -188,8 +189,58 @@ func Bootstrap(ctx context.Context, st *store.Store) (*Result, error) {
 		}
 	}
 
+	if err := EnsureSeverityPolicies(ctx, st, org.ID); err != nil {
+		return nil, err
+	}
+
 	_ = st.Audit(ctx, org.ID, user.Email, "workspace.create", org.ID, "Seeded first workspace, sites, assets, connectors")
 	return &Result{Organization: org, User: user, IngestToken: ingestTok, SimulatorTok: simTok}, nil
+}
+
+// EnsureSeverityPolicies seeds default severity/runbook policies when an org has none.
+func EnsureSeverityPolicies(ctx context.Context, st *store.Store, orgID string) error {
+	n, err := st.CountSeverityPolicies(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	policies := []model.SeverityPolicy{
+		{
+			OrganizationID: orgID,
+			Name:           "Temperature trip",
+			MatchKind:      "capability",
+			MatchValue:     "temperature",
+			Severity:       "critical",
+			Priority:       100,
+			Runbook:        "1. Confirm live reading on Telemetry.\n2. Isolate load / cool the zone.\n3. Open a work order if still above threshold after 10 minutes.\n4. Document root cause before resolve.",
+		},
+		{
+			OrganizationID: orgID,
+			Name:           "Missed heartbeat",
+			MatchKind:      "capability",
+			MatchValue:     "heartbeat",
+			Severity:       "warning",
+			Priority:       80,
+			Runbook:        "1. Check asset power and network path.\n2. Verify Device Agent / connector last sync.\n3. Ping site gateway; restore telemetry.\n4. Escalate to critical if silent > 30 minutes.",
+		},
+		{
+			OrganizationID: orgID,
+			Name:           "Default incident",
+			MatchKind:      "default",
+			MatchValue:     "",
+			Severity:       "warning",
+			Priority:       0,
+			Runbook:        "1. Acknowledge and assign an owner.\n2. Capture evidence from telemetry and events.\n3. Create a work order if field action is needed.\n4. Resolve with a short resolution note.",
+		},
+	}
+	for i := range policies {
+		if err := st.CreateSeverityPolicy(ctx, &policies[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func f64(v float64) *float64 { return &v }
