@@ -105,12 +105,14 @@ export default function Shell({ children }: { children: ReactNode }) {
         <nav className="nav">
           {items.slice(0, 7).map(([to, label]) => (
             <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "active" : "")}>
+              {NAV_ICONS[to]}
               {label}
             </NavLink>
           ))}
           <div className="sec">Platform</div>
           {items.slice(7).map(([to, label]) => (
             <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "active" : "")}>
+              {NAV_ICONS[to]}
               {label}
             </NavLink>
           ))}

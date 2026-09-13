@@ -39,7 +39,7 @@ export default function ScreenshotStrip(): ReactNode {
 function ShotImage({shot}: {shot: Shot}) {
   const src = useBaseUrl(shot.src);
   return (
-    <Link to="/gallery" className={styles.frame}>
+    <Link to="/tour" className={styles.frame}>
       <img src={src} alt={shot.alt} loading="lazy" />
     </Link>
   );
