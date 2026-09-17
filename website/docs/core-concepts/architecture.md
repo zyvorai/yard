@@ -37,14 +37,16 @@ record an outcome. Connectors advertise the actions they can execute.
 | --- | --- |
 | **Yard** | Asset registry, sites, workflows, incidents, shared UI |
 | **Device Agent** | Hardware discovery, health, local diagnostics |
-| **Nodra connector** | Decoded industrial telemetry and buffered events |
-| **Zyvor Fleet connector** | Lifecycle requests and progress (catalog today) |
-| **OTA connector** | Campaign display; execution stays elsewhere |
+| **Nodra connector** | Pull decoded telemetry / twins into Yard ingest |
+| **Zyvor Fleet connector** | Lifecycle / rollout / OTA-device progress display |
+| **OTA connector** | Campaign list display; execution stays elsewhere |
 | **HTTP / simulator** | Zero-dependency evaluation path |
 
 Device Agent reports physical capability. Nodra interprets protocols.
-Fleet owns desired state when wired. Yard preserves those lines and adds
-the operations surface: health, incidents, and work orders.
+Fleet owns desired state. Yard preserves those lines and adds the
+operations surface: health, incidents, and work orders. Optional
+connectors are wired for outbound sync when endpoint + `auth_token` are
+set — see [Connectors](../guides/connectors).
 
 ## Live ops loop
 

@@ -61,6 +61,27 @@ docker compose up --build
 docker compose --profile postgres up --build
 ```
 
+## Helm (Kubernetes)
+
+A starter chart lives at `deploy/helm/yard`:
+
+```bash
+helm upgrade --install yard ./deploy/helm/yard \
+  --set listen=":8080" \
+  --set oidc.enabled=false
+```
+
+| Value | Purpose |
+| --- | --- |
+| `listen` / `databaseUrl` | Process bind address and SQLite/Postgres DSN |
+| `persistence.*` | PVC for SQLite when not using an external DB |
+| `oidc.enabled` + `oidc.issuer` / `clientId` / `clientSecret` | Sets `YARD_OIDC_*` for `GET /api/v1/auth/oidc` discovery (browser callback is a follow-up) |
+
+For remote hosts, prefer `./scripts/deploy-remote.sh USER@HOST` (or
+`./scripts/ship`). Set `YARD_URL` to a loopback URL inside the process
+(`http://127.0.0.1:<port>`) when connectors sync into the same Yard —
+using the public IP can hairpin-NAT and stall ingest.
+
 ## Backups
 
 Auto-detects SQLite vs. Postgres from `YARD_DATABASE_URL`:

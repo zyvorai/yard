@@ -73,6 +73,14 @@ bootstrap ingest/simulator tokens, distinct from both of the above.
 - Every request is logged as one structured line (method, path, status,
   duration); set `YARD_LOG_FORMAT=json` for machine-parseable output
 
+
+## OIDC discovery (partial)
+
+`GET /api/v1/auth/oidc` returns issuer/client metadata when `YARD_OIDC_ISSUER`
+and `YARD_OIDC_CLIENT_ID` are set (Helm chart `oidc.*` values map to these
+env vars). The browser authorization-code callback is not wired yet — treat
+this as discovery-only until the callback lands.
+
 ## Audit
 
 Mutating console and automation actions write to the org audit log

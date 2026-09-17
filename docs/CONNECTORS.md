@@ -69,16 +69,19 @@ invoked from the console via `POST /api/v1/actions`:
 | `diagnostics.read` | Return agent health/inventory JSON |
 
 Configure the agent URL on the connector (`PATCH /api/v1/connectors` with
-`endpoint`) or pass `{"agent_url":"..."}` in the action payload. Dispatch
-needs `YARD_INGEST_TOKEN` (or `data/ingest.token`) because connector
+`endpoint`) or pass `{"agent_url":"..."}` in the action payload. For HTTPS
+agents (lab self-signed TLS), Yard skips certificate verify by default;
+set `config.tls_insecure` to `false` to require a trusted CA. Put the
+agent bearer in `config.auth_token`. Dispatch needs `YARD_INGEST_TOKEN`
+(or `YARD_INGEST_TOKEN_FILE` / `data/ingest.token`) because connector
 tokens are stored hashed.
 
 ## Optional Zyvor connectors
 
 | Connector | Yard responsibility | External responsibility |
 | --- | --- | --- |
-| Nodra | Display decoded telemetry once published here | Protocol interpretation, WAL, twins |
-| Zyvor Fleet | Show lifecycle request progress | Desired state, site reconciliation |
+| Nodra | Pull devices/twins → inventory + numeric observations | Protocol interpretation, WAL, twins |
+| Zyvor Fleet | Show sites, rollouts, OTA device lifecycle progress | Desired state, site reconciliation |
 | OTA | List campaigns in the asset Integrations tab | Execute the update |
 
 ### Wiring (shipped)

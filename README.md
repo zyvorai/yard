@@ -116,12 +116,12 @@ Seeded defaults include a critical temperature runbook and a warning heartbeat c
 | --- | --- |
 | **Yard** | Asset registry, sites, workflows, incidents, shared UI |
 | **Device Agent** | Hardware discovery, health, local diagnostics |
-| **Nodra connector** | Decoded industrial telemetry and buffered events |
-| **Zyvor Fleet connector** | Lifecycle requests and progress |
-| **OTA connector** | Campaign display; execution stays elsewhere |
+| **Nodra connector** | Pull decoded telemetry / twins into ingest |
+| **Zyvor Fleet connector** | Lifecycle / rollout / OTA-device progress |
+| **OTA connector** | Campaign list display; execution stays elsewhere |
 | **HTTP / simulator** | Zero-dependency evaluation path |
 
-Device Agent reports physical capability. Nodra interprets protocols. Fleet owns desired state when wired. Yard preserves those lines and adds the operations surface. Full contracts: [docs/CONNECTORS.md](docs/CONNECTORS.md).
+Device Agent reports physical capability. Nodra interprets protocols. Fleet owns desired state. Optional connectors sync when endpoint + auth_token are set ([docs/CONNECTORS.md](docs/CONNECTORS.md)). Yard preserves those lines and adds the operations surface. Full contracts: [docs/CONNECTORS.md](docs/CONNECTORS.md).
 
 ## Architecture
 
@@ -144,7 +144,7 @@ Device Agent reports physical capability. Nodra interprets protocols. Fleet owns
    (observations /       simulator             gateway
     inventory / events)                        (optional)
          |
-         +---- catalog-ready: Nodra · Fleet · OTA ----+
+         +---- optional wired: Nodra · Fleet · OTA ----+
 ```
 
 ## Repository
@@ -158,7 +158,7 @@ internal/store/        SQLite / Postgres persistence
 internal/jobs/         automations, stale ticker, action sweeper
 internal/seed/         demo workspace bootstrap
 internal/sse/          live event hub
-internal/connectors/   Device Agent dispatch and catalog kinds
+internal/connectors/   Device Agent + Nodra/Fleet/OTA sync dispatch
 web/                   React/Vite console
 website/               Docusaurus docs (GitHub Pages)
 docs/ROADMAP.md        feature catalog (Have / Next / Later)

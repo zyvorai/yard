@@ -92,12 +92,32 @@ observations. From the Integrations console you can run
 
 | Connector | Yard responsibility | External responsibility |
 | --- | --- | --- |
-| Nodra | Display decoded telemetry once published here | Protocol interpretation, WAL, twins |
-| Zyvor Fleet | Show lifecycle request progress | Desired state, site reconciliation |
-| OTA | List campaigns in the Integrations tab | Execute the update |
+| Nodra | Pull devices/twins and publish inventory + numeric observations | Protocol interpretation, WAL, twins |
+| Zyvor Fleet | Show sites, rollouts, and OTA device lifecycle progress | Desired state, site reconciliation |
+| OTA | List campaigns (via Fleet or Nodra) in the Integrations tab | Execute the update |
 
-Nodra, Fleet, and OTA stay catalog-only until their product APIs are wired.
-Actions against them return `unsupported` rather than a fake success.
+### Wiring (shipped)
+
+1. On **Integrations**, set each connector **Endpoint** and put the API bearer in
+   `config.auth_token` (JSON on the connector).
+2. Run actions from the console (or `POST /api/v1/actions`):
+
+| Connector | Action | Behavior |
+| --- | --- | --- |
+| Device Agent | `inventory.refresh` / `sync` | Pull agent inventory/sensors → Yard ingest |
+| Device Agent | `diagnostics.read` | Return agent health/inventory JSON |
+| Nodra | `telemetry.receive` / `sync` | List devices + twins → ingest |
+| Fleet | `lifecycle.request` / `desired.progress` / `sync` | Read sites, rollouts, OTA devices |
+| OTA | `campaign.list` / `update.delegate` / `sync` | Fleet `/api/v1/ota/devices` or Nodra campaigns (`config.source` = `fleet`\|`nodra`) |
+
+3. Asset detail **Integrations** tab: `GET /api/v1/assets/{id}/integrations`.
+4. Outbound sync needs `YARD_INGEST_TOKEN` (or `YARD_INGEST_TOKEN_FILE` /
+   `data/ingest.token`) because connector tokens are stored hashed.
+5. For **HTTPS Device Agent** with a lab self-signed cert, Yard skips TLS
+   verify by default on `https://` endpoints (set `config.tls_insecure: false`
+   to require a trusted CA). Pass the agent bearer as `config.auth_token`.
+
+Unknown connector kinds still return `unsupported`.
 
 Full contract notes live in the repo at
 [docs/CONNECTORS.md](https://github.com/zyvorai/yard/blob/main/docs/CONNECTORS.md).
