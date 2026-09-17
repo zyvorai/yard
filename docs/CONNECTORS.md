@@ -96,6 +96,10 @@ tokens are stored hashed.
 
 Unknown connector kinds still return `unsupported`.
 
+Cross-product suite CI (hermetic stubs for these same paths) lives in
+[zyvorai/edge-stack](https://github.com/zyvorai/edge-stack) — see
+[`docs/HOW_THEY_FIT.md`](https://github.com/zyvorai/edge-stack/blob/main/docs/HOW_THEY_FIT.md).
+
 Each connector advertises supported actions. The UI offers executable actions for Device Agent, Nodra, Fleet, and OTA when an endpoint is set.
 
 ## MQTT adapter
