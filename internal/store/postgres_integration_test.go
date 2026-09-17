@@ -12,7 +12,8 @@ import (
 )
 
 // Run with:
-//   YARD_TEST_POSTGRES=postgres://yard:yard@127.0.0.1:5432/yard?sslmode=disable go test -tags=integration ./internal/store/
+//
+//	YARD_TEST_POSTGRES=postgres://yard:yard@127.0.0.1:5432/yard?sslmode=disable go test -tags=integration ./internal/store/
 func TestPostgresOpenAndSite(t *testing.T) {
 	dsn := os.Getenv("YARD_TEST_POSTGRES")
 	if dsn == "" {

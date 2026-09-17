@@ -1,4 +1,4 @@
-.PHONY: test build web run sim tidy ship backup restore
+.PHONY: fmt vet test race check build web run sim tidy ship backup restore
 
 YARD_LISTEN ?= :8080
 YARD_DATABASE_URL ?= file:data/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)
@@ -6,8 +6,20 @@ YARD_DATABASE_URL ?= file:data/yard.db?_pragma=busy_timeout(5000)&_pragma=foreig
 tidy:
 	go mod tidy
 
+fmt:
+	@test -z "$$(gofmt -l .)" || (echo "Run gofmt on:"; gofmt -l .; exit 1)
+
+vet:
+	go vet ./...
+
 test:
 	go test ./...
+	cd web && npm test
+
+race:
+	go test -race ./...
+
+check: fmt vet race
 	cd web && npm test
 
 web:
