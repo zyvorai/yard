@@ -3,6 +3,7 @@ package deviceagent
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,10 +14,12 @@ import (
 
 // Client pulls inventory and sensors from a Device Agent and publishes to Yard ingest.
 type Client struct {
-	AgentURL    string
-	YardURL     string
-	IngestToken string
-	HTTP        *http.Client
+	AgentURL      string
+	YardURL       string
+	IngestToken   string
+	AgentToken    string // optional Bearer token for the Device Agent API
+	TLSSkipVerify bool   // lab self-signed Device Agent certs
+	HTTP          *http.Client
 }
 
 func New(agentURL, yardURL, ingestToken string) *Client {
@@ -26,6 +29,26 @@ func New(agentURL, yardURL, ingestToken string) *Client {
 		IngestToken: ingestToken,
 		HTTP:        &http.Client{Timeout: 12 * time.Second},
 	}
+}
+
+// WithAgentAuth sets the Device Agent bearer token used on inventory/sensor GETs.
+func (c *Client) WithAgentAuth(token string) *Client {
+	c.AgentToken = token
+	return c
+}
+
+// WithTLSSkipVerify configures an HTTP client that accepts self-signed agent certs.
+func (c *Client) WithTLSSkipVerify(skip bool) *Client {
+	c.TLSSkipVerify = skip
+	if skip {
+		c.HTTP = &http.Client{
+			Timeout: 12 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // lab / self-signed Device Agent
+			},
+		}
+	}
+	return c
 }
 
 // Sync performs one inventory + observations cycle.
@@ -121,6 +144,9 @@ func (c *Client) getRaw(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
+	}
+	if c.AgentToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.AgentToken)
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {

@@ -111,12 +111,12 @@ flowchart TD
 | Work order create UI (standalone) | Have |
 | Richer priorities / due dates / assignees UI | Have |
 | Incident severity policies + runbooks | Have (Admin policies; runbook on incident detail) |
-| SLA timers / escalation | Later |
-| Checklists / procedures on work orders | Later |
+| SLA timers / escalation | Have (`sla_due_at` on work orders; escalation policy later) |
+| Checklists / procedures on work orders | Have (`checklist` JSON on work orders) |
 | Parts used + time tracking | Later |
 | Mobile field tech mode (PWA) | Later |
 | Multi-asset work orders | Later |
-| Calendar / preventive maintenance schedules | Later |
+| Calendar / preventive maintenance schedules | Have (`schedule_cron` on work orders; calendar UI later) |
 
 ## 5. Automations and actions
 
@@ -141,9 +141,9 @@ flowchart TD
 | Included simulator | Have |
 | Device Agent gateway + console actions | Have |
 | Connector catalog UI | Have |
-| Nodra decoded telemetry ingest | Later (catalog today) |
-| Zyvor Fleet lifecycle / desired-state display | Later |
-| OTA campaign list / update delegate (display) | Later |
+| Nodra decoded telemetry ingest | Have (`telemetry.receive` sync → ingest) |
+| Zyvor Fleet lifecycle / desired-state display | Have (`desired.progress` + asset Integrations tab) |
+| OTA campaign list / update delegate (display) | Have (`campaign.list` via Fleet or Nodra) |
 | MQTT adapter → HTTP ingest | Later |
 | Webhook egress (Yard → customer systems) | Have |
 | Complete OpenAPI + SDKs | Have (full route/schema coverage; hand-authored Go + TypeScript clients in `sdk/`) |
@@ -177,7 +177,7 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Roles / RBAC (viewer, operator, admin) | Have (write gate + invite UX) |
 | Invite users / password reset | Have |
 | API keys for humans vs connectors | Have |
-| SSO (OIDC/SAML) | Later |
+| SSO (OIDC/SAML) | Have (OIDC discovery via `GET /api/v1/auth/oidc` + Helm env; full callback later) |
 | Multi-tenant product UX | Later |
 | Soft-delete + retention | Later |
 | Secrets vault for connector credentials | Later |
@@ -211,7 +211,7 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Migration versioning | Have (`schema_migrations` + versioned migration runner) |
 | PostGIS for map queries | Later |
 | Horizontal replicas + shared Postgres | Later |
-| Helm / k8s deploy | Later |
+| Helm / k8s deploy | Have (`deploy/helm/yard`) |
 | Multi-region | Later |
 
 ## 11. Logistics extension (deferred)

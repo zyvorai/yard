@@ -153,7 +153,10 @@ type WorkOrder struct {
 	Status         string     `json:"status"`
 	Assignee       string     `json:"assignee"`
 	Notes          string     `json:"notes"`
+	Checklist      string     `json:"checklist"` // JSON array of {id,label,done}
+	ScheduleCron   string     `json:"schedule_cron,omitempty"`
 	DueAt          *time.Time `json:"due_at,omitempty"`
+	SLADueAt       *time.Time `json:"sla_due_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }

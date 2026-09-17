@@ -9,19 +9,16 @@ import (
 	"github.com/zyvorai/yard/internal/store"
 )
 
-func TestDispatchCatalogOnly(t *testing.T) {
+func TestDispatchFleetNeedsEndpoint(t *testing.T) {
 	st, err := store.Open("file:dispatch_test.db?mode=memory&cache=shared&_pragma=foreign_keys(ON)")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
 	d := connectors.NewDispatcher(st)
-	status, result, err := d.Execute(context.Background(), "org", &model.Connector{Kind: "fleet", Name: "Fleet"}, "lifecycle.request", "{}")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status != "unsupported" {
-		t.Fatalf("status=%s result=%s", status, result)
+	status, _, err := d.Execute(context.Background(), "org", &model.Connector{Kind: "fleet", Name: "Fleet"}, "lifecycle.request", "{}")
+	if err == nil || status != "failed" {
+		t.Fatalf("expected failure without endpoint, status=%s err=%v", status, err)
 	}
 }
 
@@ -37,5 +34,21 @@ func TestDispatchDeviceAgentNeedsToken(t *testing.T) {
 	}, "inventory.refresh", "{}")
 	if err == nil || status != "failed" {
 		t.Fatalf("expected failure without ingest token, status=%s err=%v", status, err)
+	}
+}
+
+func TestDispatchNodraNeedsAuth(t *testing.T) {
+	st, err := store.Open("file:dispatch_test3.db?mode=memory&cache=shared&_pragma=foreign_keys(ON)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	t.Setenv("YARD_INGEST_TOKEN", "tok")
+	d := connectors.NewDispatcher(st)
+	status, _, err := d.Execute(context.Background(), "org", &model.Connector{
+		Kind: "nodra", Endpoint: "http://127.0.0.1:1", Config: `{"optional":true}`,
+	}, "telemetry.receive", "{}")
+	if err == nil || status != "failed" {
+		t.Fatalf("expected failure without auth_token, status=%s err=%v", status, err)
 	}
 }

@@ -81,11 +81,19 @@ tokens are stored hashed.
 | Zyvor Fleet | Show lifecycle request progress | Desired state, site reconciliation |
 | OTA | List campaigns in the asset Integrations tab | Execute the update |
 
-Nodra, Fleet, and OTA stay catalog-only until their product APIs are wired.
-Actions against them return `unsupported` rather than a fake success.
+### Wiring (shipped)
 
-Each connector advertises supported actions. The UI only offers executable
-actions for Device Agent today.
+1. **Integrations** page: set Endpoint + API bearer token (`config.auth_token`).
+2. Run actions:
+   - Nodra: `telemetry.receive` — lists `/api/v1/devices` + `/api/v1/twins`, upserts inventory, publishes numeric reported fields as observations.
+   - Fleet: `lifecycle.request` / `desired.progress` — reads sites, rollouts, OTA devices.
+   - OTA: `campaign.list` — Fleet `/api/v1/ota/devices` or Nodra campaigns/devices (`config.source` = `fleet`|`nodra`).
+3. Asset detail **Integrations** tab: `GET /api/v1/assets/{id}/integrations`.
+4. Nodra sync requires `YARD_INGEST_TOKEN` (or `data/ingest.token`) for Yard ingest POSTs.
+
+Unknown connector kinds still return `unsupported`.
+
+Each connector advertises supported actions. The UI offers executable actions for Device Agent, Nodra, Fleet, and OTA when an endpoint is set.
 
 ## MQTT adapter
 

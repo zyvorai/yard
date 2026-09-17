@@ -47,6 +47,27 @@ export default function Integrations() {
     }
   }
 
+  async function saveAuthToken(c: Connector, token: string) {
+    setBusy(c.id + "tok");
+    setMsg("");
+    try {
+      let cfg: Record<string, unknown> = {};
+      try { cfg = JSON.parse(c.config || "{}"); } catch { /* ignore */ }
+      if (token) cfg.auth_token = token;
+      else delete cfg.auth_token;
+      await api(`/api/v1/connectors`, {
+        method: "PATCH",
+        body: JSON.stringify({ id: c.id, config: JSON.stringify(cfg) }),
+      });
+      setMsg(`Auth token saved for ${c.name}`);
+      await load();
+    } catch (ex) {
+      setMsg(ex instanceof Error ? ex.message : "token save failed");
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function runAction(c: Connector, action: string) {
     setBusy(c.id + action);
     setMsg("");
@@ -76,7 +97,7 @@ export default function Integrations() {
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))" }}>
         {rows.map((c) => {
           const actions = parseActions(c.actions);
-          const executable = c.kind === "device-agent";
+          const executable = c.kind === "device-agent" || c.kind === "nodra" || c.kind === "fleet" || c.kind === "ota";
           return (
             <div className="card" key={c.id}>
               <h2>{c.kind}</h2>
@@ -90,6 +111,14 @@ export default function Integrations() {
                 disabled={busy.startsWith(c.id)}
                 onSave={(endpoint) => saveEndpoint(c, endpoint)}
               />
+              {(c.kind === "nodra" || c.kind === "fleet" || c.kind === "ota") && (
+                <AuthTokenForm
+                  key={c.id + "-tok"}
+                  hasToken={!!(() => { try { return JSON.parse(c.config || "{}").auth_token; } catch { return false; } })()}
+                  disabled={!!busy}
+                  onSave={(tok) => saveAuthToken(c, tok)}
+                />
+              )}
               <p className="lede">Actions: {actions.join(", ") || "none"}</p>
               {c.token_hint && <p className="lede">Token {c.token_hint}</p>}
               <p className="lede">Last sync {fmt(c.last_sync_at)}</p>
@@ -100,7 +129,7 @@ export default function Integrations() {
                       key={a}
                       type="button"
                       className="btn small accent"
-                      disabled={!!busy}
+                      disabled={!!busy || !c.endpoint}
                       onClick={() => runAction(c, a)}
                     >
                       {a}
@@ -108,8 +137,8 @@ export default function Integrations() {
                   ))}
                 </div>
               )}
-              {!executable && c.status === "available" && (
-                <p className="lede">Catalog only until the product API is wired.</p>
+              {!c.endpoint && (c.kind === "nodra" || c.kind === "fleet" || c.kind === "ota") && (
+                <p className="lede">Save an endpoint to enable sync actions.</p>
               )}
             </div>
           );
@@ -152,6 +181,31 @@ function EndpointForm({ initial, disabled, onSave }: { initial: string; disabled
         <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="http://127.0.0.1:9188" disabled={disabled} />
       </label>
       <button className="btn small ghost" type="submit" disabled={disabled} style={{ marginTop: 8 }}>Save</button>
+    </form>
+  );
+}
+
+function AuthTokenForm({ hasToken, disabled, onSave }: { hasToken: boolean; disabled: boolean; onSave: (v: string) => void }) {
+  const [value, setValue] = useState("");
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    onSave(value.trim());
+    setValue("");
+  }
+  return (
+    <form onSubmit={submit} className="endpoint-form">
+      <label className="lede" style={{ display: "block", marginTop: 8 }}>
+        API bearer token {hasToken ? "(set)" : "(required for sync)"}
+        <input
+          type="password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={hasToken ? "•••••••• (enter to replace)" : "paste token"}
+          disabled={disabled}
+          autoComplete="off"
+        />
+      </label>
+      <button className="btn small ghost" type="submit" disabled={disabled || !value.trim()} style={{ marginTop: 8 }}>Save token</button>
     </form>
   );
 }

@@ -116,6 +116,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
   token_hash TEXT NOT NULL, token_hint TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS api_keys_hash ON api_keys(token_hash);`},
+	{4, `ALTER TABLE work_orders ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE work_orders ADD COLUMN sla_due_at TEXT;
+ALTER TABLE work_orders ADD COLUMN schedule_cron TEXT NOT NULL DEFAULT '';`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
@@ -973,38 +976,48 @@ func (s *Store) CreateWorkOrder(ctx context.Context, wo *model.WorkOrder) error 
 	if wo.Status == "" {
 		wo.Status = "open"
 	}
-	_, err := s.exec(ctx, `INSERT INTO work_orders(id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,due_at,created_at,updated_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, wo.ID, wo.OrganizationID, wo.AssetID, wo.SiteID, wo.IncidentID, wo.Title, wo.Kind, wo.Priority, wo.Status, wo.Assignee, wo.Notes, ts(wo.DueAt), wo.CreatedAt.Format(time.RFC3339Nano), wo.UpdatedAt.Format(time.RFC3339Nano))
+	if wo.Checklist == "" {
+		wo.Checklist = "[]"
+	}
+	_, err := s.exec(ctx, `INSERT INTO work_orders(id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, wo.ID, wo.OrganizationID, wo.AssetID, wo.SiteID, wo.IncidentID, wo.Title, wo.Kind, wo.Priority, wo.Status, wo.Assignee, wo.Notes, wo.Checklist, wo.ScheduleCron, ts(wo.DueAt), ts(wo.SLADueAt), wo.CreatedAt.Format(time.RFC3339Nano), wo.UpdatedAt.Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *Store) UpdateWorkOrder(ctx context.Context, wo *model.WorkOrder) error {
 	wo.UpdatedAt = time.Now().UTC()
-	_, err := s.exec(ctx, `UPDATE work_orders SET title=?, kind=?, priority=?, status=?, assignee=?, notes=?, incident_id=?, due_at=?, updated_at=? WHERE id=? AND organization_id=?`,
-		wo.Title, wo.Kind, wo.Priority, wo.Status, wo.Assignee, wo.Notes, wo.IncidentID, ts(wo.DueAt), wo.UpdatedAt.Format(time.RFC3339Nano), wo.ID, wo.OrganizationID)
+	if wo.Checklist == "" {
+		wo.Checklist = "[]"
+	}
+	_, err := s.exec(ctx, `UPDATE work_orders SET title=?, kind=?, priority=?, status=?, assignee=?, notes=?, checklist=?, schedule_cron=?, incident_id=?, due_at=?, sla_due_at=?, updated_at=? WHERE id=? AND organization_id=?`,
+		wo.Title, wo.Kind, wo.Priority, wo.Status, wo.Assignee, wo.Notes, wo.Checklist, wo.ScheduleCron, wo.IncidentID, ts(wo.DueAt), ts(wo.SLADueAt), wo.UpdatedAt.Format(time.RFC3339Nano), wo.ID, wo.OrganizationID)
 	return err
 }
 
 func (s *Store) GetWorkOrder(ctx context.Context, orgID, id string) (*model.WorkOrder, error) {
-	row := s.queryRow(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,due_at,created_at,updated_at FROM work_orders WHERE organization_id=? AND id=?`, orgID, id)
+	row := s.queryRow(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at FROM work_orders WHERE organization_id=? AND id=?`, orgID, id)
 	return scanWO(row)
 }
 
 func scanWO(row scannable) (*model.WorkOrder, error) {
 	var wo model.WorkOrder
-	var asset, site, inc, due sql.NullString
+	var asset, site, inc, due, sla sql.NullString
 	var created, updated string
-	if err := row.Scan(&wo.ID, &wo.OrganizationID, &asset, &site, &inc, &wo.Title, &wo.Kind, &wo.Priority, &wo.Status, &wo.Assignee, &wo.Notes, &due, &created, &updated); err != nil {
+	if err := row.Scan(&wo.ID, &wo.OrganizationID, &asset, &site, &inc, &wo.Title, &wo.Kind, &wo.Priority, &wo.Status, &wo.Assignee, &wo.Notes, &wo.Checklist, &wo.ScheduleCron, &due, &sla, &created, &updated); err != nil {
 		return nil, err
 	}
 	wo.AssetID, wo.SiteID, wo.IncidentID = nullS(asset), nullS(site), nullS(inc)
 	wo.DueAt = parseTimePtr(due)
+	wo.SLADueAt = parseTimePtr(sla)
 	wo.CreatedAt, wo.UpdatedAt = parseTime(created), parseTime(updated)
+	if wo.Checklist == "" {
+		wo.Checklist = "[]"
+	}
 	return &wo, nil
 }
 
 func (s *Store) ListWorkOrders(ctx context.Context, orgID, status string) ([]model.WorkOrder, error) {
-	q := `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,due_at,created_at,updated_at FROM work_orders WHERE organization_id=?`
+	q := `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at FROM work_orders WHERE organization_id=?`
 	args := []any{orgID}
 	if status != "" {
 		q += ` AND status=?`
@@ -1380,7 +1393,7 @@ func (s *Store) ListEventsForAsset(ctx context.Context, orgID, assetID string, l
 }
 
 func (s *Store) ListWorkOrdersForAsset(ctx context.Context, orgID, assetID string) ([]model.WorkOrder, error) {
-	rows, err := s.query(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,due_at,created_at,updated_at FROM work_orders WHERE organization_id=? AND asset_id=? ORDER BY created_at DESC LIMIT 100`, orgID, assetID)
+	rows, err := s.query(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at FROM work_orders WHERE organization_id=? AND asset_id=? ORDER BY created_at DESC LIMIT 100`, orgID, assetID)
 	if err != nil {
 		return nil, err
 	}

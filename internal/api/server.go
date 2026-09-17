@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ready")) })
 	mux.HandleFunc("/metrics", s.metrics.handler)
 	mux.HandleFunc("/api/v1/auth/login", s.login)
+	mux.HandleFunc("/api/v1/auth/oidc", s.oidcConfig)
 	mux.HandleFunc("/api/v1/auth/me", s.withUser(s.me))
 	mux.HandleFunc("/api/v1/auth/accept-invite", s.acceptInvite)
 	mux.HandleFunc("/api/v1/auth/request-reset", s.requestReset)
@@ -239,6 +240,27 @@ func (s *Server) withConnector(fn func(http.ResponseWriter, *http.Request, *mode
 		_ = s.Store.TouchConnector(r.Context(), c.ID)
 		fn(w, r, c)
 	}
+}
+
+func (s *Server) oidcConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	issuer := strings.TrimSpace(os.Getenv("YARD_OIDC_ISSUER"))
+	clientID := strings.TrimSpace(os.Getenv("YARD_OIDC_CLIENT_ID"))
+	enabled := issuer != "" && clientID != ""
+	out := map[string]any{
+		"enabled":   enabled,
+		"issuer":    issuer,
+		"client_id": clientID,
+	}
+	if enabled {
+		out["authorize_url"] = strings.TrimRight(issuer, "/") + "/authorize"
+		out["token_url"] = strings.TrimRight(issuer, "/") + "/token"
+		out["note"] = "OIDC discovery configured; full browser callback flow lands in a follow-up (env: YARD_OIDC_ISSUER, YARD_OIDC_CLIENT_ID, YARD_OIDC_CLIENT_SECRET)."
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -817,6 +839,45 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		writeJSON(w, 405, map[string]string{"error": "method"})
 		return
 	}
+	if len(parts) >= 2 && parts[1] == "integrations" && r.Method == http.MethodGet {
+		meta := map[string]any{}
+		_ = json.Unmarshal([]byte(a.Metadata), &meta)
+		out := map[string]any{
+			"asset_id":     a.ID,
+			"external_ref": a.ExternalRef,
+			"nodra":        meta["nodra"],
+			"fleet":        meta["fleet"],
+			"ota":          meta["ota"],
+			"raw_metadata": meta,
+		}
+		if acts, err := s.Store.ListActions(r.Context(), u.OrganizationID); err == nil {
+			for _, act := range acts {
+				if act.Result == "" {
+					continue
+				}
+				var parsed any
+				if json.Unmarshal([]byte(act.Result), &parsed) != nil {
+					continue
+				}
+				switch act.Action {
+				case "campaign.list":
+					if out["ota"] == nil {
+						out["ota"] = parsed
+					}
+				case "desired.progress", "lifecycle.request":
+					if out["fleet"] == nil {
+						out["fleet"] = parsed
+					}
+				case "telemetry.receive":
+					if out["nodra"] == nil {
+						out["nodra"] = parsed
+					}
+				}
+			}
+		}
+		writeJSON(w, 200, out)
+		return
+	}
 	if len(parts) >= 2 && parts[1] == "observations" {
 		cap := r.URL.Query().Get("capability")
 		limit := 400
@@ -1286,6 +1347,12 @@ func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.
 		if v := in["notes"]; v != "" {
 			wo.Notes = v
 		}
+		if v, ok := in["checklist"]; ok {
+			wo.Checklist = v
+		}
+		if v, ok := in["schedule_cron"]; ok {
+			wo.ScheduleCron = v
+		}
 		if v := in["priority"]; v != "" {
 			wo.Priority = v
 		}
@@ -1296,6 +1363,15 @@ func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.
 				wo.DueAt = &t
 			} else if t, err := time.Parse("2006-01-02", v); err == nil {
 				wo.DueAt = &t
+			}
+		}
+		if v, ok := in["sla_due_at"]; ok {
+			if v == "" {
+				wo.SLADueAt = nil
+			} else if t, err := time.Parse(time.RFC3339, v); err == nil {
+				wo.SLADueAt = &t
+			} else if t, err := time.Parse("2006-01-02", v); err == nil {
+				wo.SLADueAt = &t
 			}
 		}
 		if err := s.Store.UpdateWorkOrder(r.Context(), wo); err != nil {

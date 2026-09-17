@@ -168,6 +168,7 @@ export type Connector = {
   endpoint: string;
   token_hint: string;
   actions: string;
+  config: string;
   last_sync_at?: string;
 };
 

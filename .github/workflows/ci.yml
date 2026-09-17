@@ -112,3 +112,23 @@ jobs:
           cache-dependency-path: website/package-lock.json
       - run: npm --prefix website ci
       - run: npm --prefix website run build
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install kubeconform
+        run: go install github.com/yannh/kubeconform/cmd/kubeconform@latest
+      - run: helm lint deploy/helm/yard
+      - name: Helm template + kubeconform
+        run: |
+          helm template yard deploy/helm/yard \
+            --set image.repository=yard --set image.tag=ci \
+            --set persistence.enabled=false \
+            > /tmp/yard.yaml
+          kubeconform -summary -strict /tmp/yard.yaml

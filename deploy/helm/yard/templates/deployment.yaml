@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "yard.name" . }}
+  labels:
+    {{- include "yard.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "yard.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "yard.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: yard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: YARD_LISTEN
+              value: {{ .Values.listen | quote }}
+            - name: YARD_DATABASE_URL
+              value: {{ .Values.databaseUrl | quote }}
+            {{- if .Values.oidc.enabled }}
+            - name: YARD_OIDC_ISSUER
+              value: {{ .Values.oidc.issuer | quote }}
+            - name: YARD_OIDC_CLIENT_ID
+              value: {{ .Values.oidc.clientId | quote }}
+            - name: YARD_OIDC_CLIENT_SECRET
+              value: {{ .Values.oidc.clientSecret | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/yard
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "yard.name" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

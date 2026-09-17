@@ -432,7 +432,7 @@ export default function Assets() {
                 ) : <p className="lede">No work orders. Create one from Work orders or Incidents.</p>
               )}
               {tab === "Integrations" && (
-                <p className="lede">Source of truth is the connector that last published inventory for ref {sel.asset.external_ref || "—"}.</p>
+                <IntegrationsPanel assetId={sel.asset.id} externalRef={sel.asset.external_ref || "—"} />
               )}
             </>
           )}
@@ -459,6 +459,35 @@ function Spark({ obs }: { obs: { capability: string; value: number }[] }) {
       <div className="spark">
         {vals.map((v, i) => <i key={i} style={{ height: `${Math.max(8, (v / max) * 36)}px` }} />)}
       </div>
+    </div>
+  );
+}
+
+function IntegrationsPanel({ assetId, externalRef }: { assetId: string; externalRef: string }) {
+  const [data, setData] = useState<Record<string, unknown> | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    api<Record<string, unknown>>(`/api/v1/assets/${assetId}/integrations`)
+      .then(setData)
+      .catch((ex) => setErr(ex instanceof Error ? ex.message : "failed"));
+  }, [assetId]);
+  if (err) return <p className="lede">{err}</p>;
+  if (!data) return <p className="lede">Loading connector state…</p>;
+  return (
+    <div>
+      <p className="lede">External ref {externalRef}. Sync Nodra / Fleet / OTA from Integrations.</p>
+      {(["nodra", "fleet", "ota"] as const).map((k) => (
+        <div key={k} style={{ marginTop: 12 }}>
+          <h3 style={{ textTransform: "uppercase", fontSize: 12, letterSpacing: "0.06em" }}>{k}</h3>
+          {data[k] ? (
+            <pre style={{ whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 180, overflow: "auto" }}>
+              {JSON.stringify(data[k], null, 2)}
+            </pre>
+          ) : (
+            <p className="lede">No {k} data yet.</p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

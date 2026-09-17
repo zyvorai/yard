@@ -1,0 +1,29 @@
+image:
+  repository: ghcr.io/zyvorai/yard
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+listen: ":8080"
+databaseUrl: "file:/var/lib/yard/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+
+service:
+  type: ClusterIP
+  port: 8080
+
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClass: ""
+
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {cpu: "1", memory: 512Mi}
+
+# Optional OIDC (set issuer + clientId to enable; see docs)
+oidc:
+  enabled: false
+  issuer: ""
+  clientId: ""
+  clientSecret: ""
