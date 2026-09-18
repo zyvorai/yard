@@ -83,7 +83,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 
   web:
     runs-on: ubuntu-latest
@@ -123,7 +123,7 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: Install kubeconform
-        run: go install github.com/yannh/kubeconform/cmd/kubeconform@latest
+        run: go install github.com/yannh/kubeconform/cmd/kubeconform@v0.6.7
       - run: helm lint deploy/helm/yard
       - name: Helm template + kubeconform
         run: |

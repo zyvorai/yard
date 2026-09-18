@@ -7,7 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/zyvorai/yard/internal/model"
 	"github.com/zyvorai/yard/internal/store"
 )
 
@@ -27,8 +26,7 @@ func TestPostgresOpenAndSite(t *testing.T) {
 	if st.Dialect != "postgres" {
 		t.Fatalf("dialect=%s", st.Dialect)
 	}
-	org := &model.Organization{Name: "PG Test", Slug: "pg-test"}
-	if err := st.CreateOrganization(context.Background(), org); err != nil {
+	if _, err := st.CreateOrganization(context.Background(), "PG Test", "pg-test"); err != nil {
 		// may already exist from prior run
 		t.Log(err)
 	}
