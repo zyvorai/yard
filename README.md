@@ -174,7 +174,15 @@ scripts/restore.sh     restore a scripts/backup.sh snapshot
 
 ## Prerequisites
 
-Go 1.22+ and Node 20+ (the docs site build uses Node 22). SQLite ships with the Go standard toolchain via `modernc.org/sqlite` — no CGO, no system SQLite package required. Postgres is optional (`docker compose --profile postgres`). No other services are required to run Yard standalone.
+Go 1.25+ (`go.mod`) and Node 20+ (the docs site build uses Node 22). SQLite ships with the Go standard toolchain via `modernc.org/sqlite` — no CGO, no system SQLite package required. Postgres is optional (`docker compose --profile postgres`). No other services are required to run Yard standalone.
+
+```bash
+make help
+make ci                         # gofmt, vet, tests
+make status                     # GET /healthz on a running server
+make deploy-remote H=<host> U=sus
+make ship HOST=user@host        # older alias
+```
 
 ## Quick start
 

@@ -77,8 +77,8 @@ helm upgrade --install yard ./deploy/helm/yard \
 | `persistence.*` | PVC for SQLite when not using an external DB |
 | `oidc.enabled` + `oidc.issuer` / `clientId` / `clientSecret` | Sets `YARD_OIDC_*` for `GET /api/v1/auth/oidc` discovery (browser callback is a follow-up) |
 
-For remote hosts, prefer `./scripts/deploy-remote.sh USER@HOST` (or
-`./scripts/ship`). Set `YARD_URL` to a loopback URL inside the process
+For remote hosts, prefer `make deploy-remote H=<host> U=sus`
+(`./scripts/deploy-remote.sh USER@HOST`, or `./scripts/ship`). Set `YARD_URL` to a loopback URL inside the process
 (`http://127.0.0.1:<port>`) when connectors sync into the same Yard —
 using the public IP can hairpin-NAT and stall ingest.
 
