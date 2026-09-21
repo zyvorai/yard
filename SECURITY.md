@@ -28,3 +28,4 @@ SSE uses single-use tickets from `POST /api/v1/stream/ticket` instead of
 putting the session token in the EventSource URL.
 
 Longer notes: [website security doc](https://zyvorai.github.io/yard/docs/security).
+Program-by-program status: [docs/PHASES.md](docs/PHASES.md).

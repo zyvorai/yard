@@ -17,52 +17,53 @@ evaluation only**. Change them before any shared deployment.
 
 ## Sessions and RBAC
 
-- Console login issues a bearer session (bcrypt password hash)
-- Write operations (create/update/delete assets, sites, work orders,
-  automations, actions, severity policies, asset import) require role
-  `admin` or `operator`
-- Viewers can read but not mutate
-- An empty or unrecognized role is treated as the most restrictive
-  (read-only) rather than defaulting to admin — a misconfigured role
-  fails closed, not open
-- Managing other users' accounts (invite, role change, deactivate) is
-  **admin-only**, stricter than the general write gate above, which
-  also allows `operator`
+- Console login issues a bearer session (bcrypt password hash, 12 hours)
+- Failed logins are limited per client address and email
+- `POST /api/v1/auth/logout` deletes that session. Administration lists the caller's sessions and can revoke one or all of them. Password reset deletes every session for that user
+- Write operations (assets, sites, incidents, work orders, automations, connectors, connector secrets, locations, remote actions, severity policies, asset import) require role `admin` or `operator`
+- `GET /api/v1/audit` requires the same write role. Viewers do not see recent audit rows on Overview
+- Viewers can read operational pages
+- An empty or unrecognized role is read-only
+- Managing other users (invite, role change, deactivate) is **admin-only**
+- Reading Overview does not mark assets stale. A background ticker does
+
+## Runtime mode
+
+`YARD_MODE=demo` (default) seeds sample data and `admin@yard.local` / `yard-admin`.
+
+`YARD_MODE=production` refuses that password, does not insert sample assets, and requires `YARD_PUBLIC_URL`, `YARD_SECRET_KEY` (32 bytes, base64 or hex), and on an empty database `YARD_BOOTSTRAP_EMAIL` and `YARD_BOOTSTRAP_PASSWORD`. The login form asks `GET /api/v1/meta` and only prefills the demo password in demo mode.
 
 ## Users: invite, deactivate, password reset
 
 Administration → **Users** (admin role required):
 
-- **Invite** creates the account immediately with an unusable
-  placeholder password and a 72-hour, single-use invite token; the
-  invited person sets their own password via `/accept-invite?token=...`
-  and is signed in on success
-- **Deactivate** takes effect immediately — it invalidates the user's
-  existing session token(s), not just their next login attempt
-- **Forgot password** (`/api/v1/auth/request-reset`) always responds
-  `200` regardless of whether the email exists, so the endpoint can't
-  be used to enumerate registered accounts; the reset link itself is
-  logged server-side rather than emailed (no SMTP account is wired up
-  by default — see [Automations](./guides/console#automations--triggers-and-actions)
-  for the same `YARD_SMTP_*` config used by the email automation action)
+- **Invite** creates the account with an unusable password and a 72-hour single-use token. The person sets a password at `/accept-invite?token=...`
+- When `YARD_SMTP_HOST` is set, Yard emails the link and does not log the token. Demo mode without SMTP logs the link. Production without SMTP returns 503 and does not log a token
+- **Deactivate** makes the next authenticated request fail
+- **Forgot password** always responds `200` when mail can be sent, including for unknown emails. Production without SMTP returns 503 for every request so the handler does not mint a token
 
-## Connector tokens and API keys
+## Connector secrets, tokens, and API keys
 
-Two distinct bearer-token credential types, both `Authorization: Bearer
-<token>`, both stored as SHA-256 hashes with only a short hint kept for
-display, both shown once at creation/rotation and never retrievable
-again:
+| | Ingest token | Outbound secret | API key |
+| --- | --- | --- | --- |
+| Belongs to | One connector | One connector | One human user |
+| Storage | SHA-256 hash | AES-256-GCM ciphertext | SHA-256 hash |
+| Set via | Rotate token (shown once) | `PUT /api/v1/connectors/{id}/secret` | Administration → API keys (shown once) |
+| Returned later | Hint only | `has_secret` and `secret_hint` only | Hint only |
 
-| | Connector token | API key |
-| --- | --- | --- |
-| Belongs to | One connector (a machine integration) | One human user |
-| Created via | Administration → Connectors → Rotate token | Administration → Your API keys |
-| Scope | That connector's ingest/action routes | Everything that user's own session can do |
-| Revoked when | Token rotated | Key deleted, or the owning user is deactivated |
+Do not put `auth_token` in connector `config`. The API rejects that field. Action payloads cannot override the stored secret.
 
-Treat plaintext tokens written to `data/*.token` (or
-`/var/lib/yard/*.token` on lab hosts) as secrets — those are the
-bootstrap ingest/simulator tokens, distinct from both of the above.
+Treat files under `data/*.token` as secrets. They are the bootstrap ingest and simulator tokens.
+
+## Live updates
+
+The console requests `POST /api/v1/stream/ticket` and opens `GET /api/v1/stream?ticket=`. The ticket is single-use and lasts about 60 seconds. A long-lived session token in the stream query string is rejected.
+
+## Egress and TLS
+
+Connector and webhook calls allow `http` and `https` only, do not follow redirects, and cap response bodies. Link-local and metadata addresses are blocked. Production also blocks loopback and private ranges unless the host is listed in `YARD_EGRESS_ALLOWLIST`. Demo allows private addresses so a local Device Agent works.
+
+TLS verification is on by default. `tls_insecure: true` is accepted in demo mode or when `YARD_ALLOW_INSECURE_TLS=1`.
 
 ## Ingest hardening
 
@@ -74,6 +75,12 @@ bootstrap ingest/simulator tokens, distinct from both of the above.
   duration); set `YARD_LOG_FORMAT=json` for machine-parseable output
 
 
+## Production hardening
+
+The controls above are the production baseline: mode, encrypted secrets, login limits, session revoke, SSE tickets, CORS (`YARD_CORS_ORIGINS`; production with an empty list is same-origin only), security headers, egress policy, and `/readyz`.
+
+CORS in demo mode with no allowlist is `*`. `Strict-Transport-Security` is sent when `YARD_PUBLIC_URL` uses `https`.
+
 ## OIDC discovery (Partial)
 
 `GET /api/v1/auth/oidc` returns issuer/client metadata when `YARD_OIDC_ISSUER`
@@ -81,14 +88,7 @@ and `YARD_OIDC_CLIENT_ID` are set (Helm chart `oidc.*` values map to these
 env vars). The browser authorization-code callback is not wired yet — treat
 this as discovery-only.
 
-## Production hardening
-
-- `YARD_MODE=production` disables demo credentials and sample data.
-- Connector secrets are encrypted and redacted from API responses.
-- Login failures are rate-limited; sessions can be listed and revoked.
-- SSE uses short-lived tickets instead of session tokens in the URL.
-- Outbound connector calls enforce scheme, private-network, and redirect policy.
-- `/readyz` checks the database and migration version.
+See [Programs](./guides/programs) for what is only started or still planned.
 
 ## Audit
 

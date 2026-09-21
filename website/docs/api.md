@@ -23,16 +23,17 @@ curl -sS -X POST "$YARD_URL/api/v1/auth/login" \
 Use `Authorization: Bearer <token>` on subsequent calls.
 
 :::info Write access
-Write mutations (create/update/delete assets, sites, work orders,
-automations, actions, severity policies, asset import) require role
-`admin` or `operator`. Viewers can read but not mutate. Managing other
-users' accounts (invite, role, deactivate) is admin-only — see
-[Security](./security).
+Write mutations (assets, sites, incidents, work orders, automations,
+connectors, secrets, locations, actions, severity policies, and asset
+import) require role `admin` or `operator`. `GET /api/v1/audit` does
+too. Viewers can read operational routes. Managing other users is
+admin-only — see [Security](./security).
 :::
 
-The full request/response schema for every route below lives in
-[openapi.yaml](https://github.com/zyvorai/yard/blob/main/openapi.yaml)
-at the repo root. Hand-authored Go and TypeScript clients covering the
+The OpenAPI file covers the original route set. Newer routes on this
+page (meta, logout, sessions, stream tickets, connector secrets,
+locations) are documented here; the YAML catalog has not been regenerated
+for them yet. Hand-authored Go and TypeScript clients covering the
 core flows (auth, assets, telemetry, incidents, work orders,
 automations) are in
 [`sdk/go`](https://github.com/zyvorai/yard/tree/main/sdk/go) and
@@ -44,14 +45,15 @@ verified against a real running Yard server, not just typechecked.
 | Area | Paths |
 | --- | --- |
 | Health | `/healthz`, `/readyz`, `/metrics` |
-| Auth | `/api/v1/auth/login`, `…/me`, `…/accept-invite`, `…/request-reset`, `…/reset` |
+| Auth | `/api/v1/auth/login`, `…/logout`, `…/me`, `…/sessions`, `…/accept-invite`, `…/request-reset`, `…/reset`, `…/oidc` |
+| Meta | `/api/v1/meta` (mode; no auth) |
 | Admin | `/api/v1/admin/users` (list/invite/role/deactivate), `/api/v1/api-keys` |
-| Registry | `/api/v1/sites`, `/api/v1/assets`, `…/{id}/capabilities` |
+| Registry | `/api/v1/sites`, `/api/v1/assets`, `…/{id}/capabilities`, `/api/v1/locations` |
 | Bulk IO | `/api/v1/assets/export`, `/api/v1/assets/import` |
 | Ops | `/api/v1/telemetry`, `/api/v1/assets/{id}/observations` (optional `capability`/`from`/`to`), `/api/v1/events`, `/api/v1/incidents`, `/api/v1/work-orders` |
 | Policies | `/api/v1/severity-policies` |
-| Platform | `/api/v1/connectors`, `/api/v1/actions`, `/api/v1/automations`, `/api/v1/audit` |
-| Live | `/api/v1/stream` (SSE) |
+| Platform | `/api/v1/connectors`, `PUT /api/v1/connectors/{id}/secret`, `/api/v1/actions`, `/api/v1/automations`, `/api/v1/audit` |
+| Live | `POST /api/v1/stream/ticket`, `GET /api/v1/stream?ticket=` |
 | Ingest | `/api/v1/ingest/observations`, `…/inventory`, `…/events` |
 | Misc | `/api/v1/onboarding`, `/api/v1/geocode` |
 
@@ -59,6 +61,38 @@ Ingest uses connector bearer tokens, not human sessions. See
 [Connectors](./guides/connectors). Everything else accepts either a
 session token (from login) or a human API key — see
 [Security](./security).
+
+## Live updates
+
+```bash
+TICKET=$(curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  "$YARD_URL/api/v1/stream/ticket" | jq -r .ticket)
+curl -N "$YARD_URL/api/v1/stream?ticket=$TICKET"
+```
+
+The ticket is single-use and expires in about 60 seconds. Do not put the session token on the stream URL.
+
+## Connector secret
+
+```bash
+curl -sS -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"secret":"..."}' \
+  "$YARD_URL/api/v1/connectors/$CONNECTOR_ID/secret"
+```
+
+The response includes `has_secret` and `secret_hint`. It does not echo the secret. Connector list JSON never includes `auth_token`.
+
+## Locations
+
+```bash
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Cold room","kind":"zone"}' \
+  "$YARD_URL/api/v1/locations"
+```
+
+`parent_id` is optional. This is a stored tree, not a floor-plan UI.
 
 ## Time-range telemetry
 

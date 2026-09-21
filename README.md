@@ -75,11 +75,11 @@ Full tour: [Product tour](https://zyvorai.github.io/yard/tour) · console how-to
 ## Live ops and automations
 
 - Background **stale ticker** marks missed heartbeats without waiting for a page refresh
-- Console pages subscribe to `GET /api/v1/stream` (SSE) for live Overview and Map updates
+- Console pages subscribe to live updates with a short-lived SSE ticket (`POST /api/v1/stream/ticket`, then `GET /api/v1/stream?ticket=`). The session token is not placed in the stream URL
 - Optional browser notifications for new **critical** incidents
 - Automations: a literal **threshold**, a capability's own declared **Min/Max range** (no duplicated number to keep in sync), or a **stale** heartbeat, each → open incident, notify, webhook, Slack, email, or PagerDuty
 - Create / enable / delete rules in the Automations console
-- Remote actions carry idempotency keys, expiry, and audit outcomes
+- Remote actions carry idempotency keys and expiry. A connector action is queued on a `jobs` row and executed by an in-process worker; an action with no connector is recorded locally
 
 ## Registry, map, and bulk IO
 
@@ -105,10 +105,12 @@ Seeded defaults include a critical temperature runbook and a warning heartbeat c
 
 ## Users, roles, and API keys
 
-- Three roles: **viewer** (read-only), **operator** and **admin** (both can mutate); an empty or unrecognized role fails closed to read-only rather than defaulting to admin
-- **Admin → Users**: invite by email (a 72h single-use token, no email delivery required to use it), change a role inline, or deactivate — which invalidates that person's session immediately, not just their next login
-- Self-service **password reset** (`/api/v1/auth/request-reset` + `/reset`) never reveals whether an email has an account
-- **Admin → Your API keys**: any role can mint a long-lived, per-person `yard_key_...` credential for scripts — separate from connector tokens, which are shared per machine integration rather than per person; the raw key is shown once and hashed at rest (SHA-256), same as connector tokens
+- Three roles: **viewer** (read-only), **operator** and **admin** (both can mutate incidents, connectors, remote actions, and the registry). Audit reads require a write role. An empty or unrecognized role fails closed to read-only
+- **Admin → Users**: invite by email (a 72h single-use token). Production sends it with `YARD_SMTP_*` and returns 503 if mail is not configured. Demo without SMTP logs the link. Deactivate rejects the next request; password reset deletes existing sessions
+- **Admin → Sessions**: list and revoke the signed-in user's sessions, or sign out everywhere
+- Self-service **password reset** never reveals whether an email has an account
+- **Admin → Your API keys**: any role can mint a long-lived, per-person `yard_key_...` credential. Connector ingest tokens are separate and hashed. Outbound connector `auth_token` values are encrypted and set with `PUT /api/v1/connectors/{id}/secret`, not returned in connector JSON
+- Login failures are rate-limited per address and email. `GET /api/v1/meta` tells the console whether to show the demo password
 
 ## Boundaries
 
@@ -121,7 +123,7 @@ Seeded defaults include a critical temperature runbook and a warning heartbeat c
 | **OTA connector** | Campaign list display; execution stays elsewhere |
 | **HTTP / simulator** | Zero-dependency evaluation path |
 
-Device Agent reports physical capability. Nodra interprets protocols. Fleet owns desired state. Optional connectors sync when endpoint + auth_token are set ([docs/CONNECTORS.md](docs/CONNECTORS.md)). Yard preserves those lines and adds the operations surface. Full contracts: [docs/CONNECTORS.md](docs/CONNECTORS.md).
+Device Agent reports physical capability. Nodra interprets protocols. Fleet owns desired state. Optional connectors sync when an endpoint and a stored secret are set ([docs/CONNECTORS.md](docs/CONNECTORS.md)). Yard preserves those lines and adds the operations surface. Full contracts: [docs/CONNECTORS.md](docs/CONNECTORS.md).
 
 ## Architecture
 
@@ -132,7 +134,7 @@ Device Agent reports physical capability. Nodra interprets protocols. Fleet owns
                     +----------------------+
                     |      cmd/yard        |
                     | API + embedded UI    |
-                    | jobs (stale/SSE)     |
+                    | jobs + action worker |
                     +----------+-----------+
                                |
                     SQLite / Postgres
@@ -153,15 +155,21 @@ Device Agent reports physical capability. Nodra interprets protocols. Fleet owns
 cmd/yard/              API server + embedded console
 cmd/simulator/         included telemetry simulator
 cmd/agent-gateway/     Device Agent → Yard ingest bridge
-internal/api/          HTTP handlers, RBAC, OpenAPI surface
-internal/store/        SQLite / Postgres persistence
+internal/api/          HTTP handlers, RBAC, sessions, secrets
+internal/store/        SQLite / Postgres persistence and migrations
 internal/jobs/         automations, stale ticker, action sweeper
-internal/seed/         demo workspace bootstrap
-internal/sse/          live event hub
+internal/queue/        durable remote-action worker
+internal/egress/       outbound URL policy
+internal/secrets/      AES-GCM connector secrets
+internal/config/       YARD_MODE and process settings
+internal/seed/         demo or production bootstrap
+internal/sse/          in-process live event hub
 internal/connectors/   Device Agent + Nodra/Fleet/OTA sync dispatch
+internal/platform/     ordered list of later programs (no runtime)
 web/                   React/Vite console
 website/               Docusaurus docs (GitHub Pages)
-docs/ROADMAP.md        feature catalog (Have / Next / Later)
+docs/ROADMAP.md        feature catalog (Have / Partial / Later)
+docs/PHASES.md         programs 1–16 with shipped versus remaining scope
 docs/CONNECTORS.md     ingest and connector contracts
 docs/ux/               live lab screenshots
 docs/social/           share / OG card
@@ -190,12 +198,14 @@ make ship HOST=user@host        # older alias
 go run ./cmd/yard
 ```
 
-Open [http://127.0.0.1:8080](http://127.0.0.1:8080)
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080). The default mode is `demo`:
 
 ```
 admin@yard.local
 yard-admin
 ```
+
+Production refuses that login. Set `YARD_MODE=production`, `YARD_PUBLIC_URL`, `YARD_SECRET_KEY`, and on an empty database `YARD_BOOTSTRAP_EMAIL` and `YARD_BOOTSTRAP_PASSWORD`. Details: [SECURITY.md](SECURITY.md) and [docs/PHASES.md](docs/PHASES.md).
 
 In another terminal:
 
@@ -263,11 +273,11 @@ The gateway reads the agent locally and publishes normalized inventory and obser
 
 ## Data model
 
-Organization · User · APIKey · Site · Asset · Capability · Observation ·
-Event · WorkOrder · Incident · SeverityPolicy · ActionRequest ·
-Connector · Automation
+Organization · User · Session · APIKey · Site · Location · Asset · Capability · Observation ·
+Event · WorkOrder · Incident · SeverityPolicy · ActionRequest · Job ·
+Connector · ConnectorSecret · Automation
 
-Every observation stores **source**, **unit**, **observed_at**, **received_at**, and **quality**. Severity policies map capability or automation matches to incident severity and runbook text. Remote actions require a session, expire, carry an idempotency key, and record an outcome.
+Every observation stores **source**, **unit**, **observed_at**, **received_at**, and **quality**. Severity policies map capability or automation matches to incident severity and runbook text. Connector actions are queued, expire, carry an idempotency key, and record an outcome when the worker finishes. Locations are a parented list; asset templates and links are stored and not yet exposed in the console.
 
 ## Interface
 
@@ -296,12 +306,13 @@ Or `make test`. Release gates cover tenant isolation, connector authentication, 
 | Product docs | [zyvorai.github.io/yard](https://zyvorai.github.io/yard/) |
 | Compare | [Yard Core vs. Zyvor Enterprise](https://zyvorai.github.io/yard/compare) |
 | Feature catalog | [docs/ROADMAP.md](docs/ROADMAP.md) |
+| Programs 1–16 | [docs/PHASES.md](docs/PHASES.md) |
 | Connectors | [docs/CONNECTORS.md](docs/CONNECTORS.md) |
 | OpenAPI | [openapi.yaml](openapi.yaml) |
 | SDKs | [sdk/](sdk/) — Go and TypeScript |
 | Security | [SECURITY.md](SECURITY.md) · [docs site](https://zyvorai.github.io/yard/docs/security) |
 
-Shipped epics include live ops (SSE + stale ticker), registry completeness, and Epic 3: bulk CSV/JSON, map clustering, and severity runbooks.
+Shipped epics include live ops (SSE tickets + stale ticker), registry completeness, bulk CSV/JSON, map clustering, severity runbooks, and the production foundation (modes, RBAC, encrypted connector secrets, egress policy, readiness). Reliable actions and maintenance locations are started. Later programs are listed in [docs/PHASES.md](docs/PHASES.md).
 
 ## License
 

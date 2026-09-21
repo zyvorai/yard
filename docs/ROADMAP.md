@@ -4,8 +4,10 @@ Yard is Zyvor’s open **asset and operations** platform. The core object is
 the **asset**. Device Agent, Nodra, Fleet, and OTA remain optional
 connectors — Yard must stay useful alone.
 
-This document is the product feature catalog and prioritized Next lane.
-Statuses: **Have** (shipped) · **Next** (scheduled) · **Later** (deferred).
+This document is the product feature catalog.
+Statuses: **Have** (shipped) · **Partial** (a real slice, exit criteria not met) · **Later** (not started).
+
+Program-level detail, including what is still missing, is [PHASES.md](./PHASES.md).
 
 ## Shipped epics
 
@@ -60,13 +62,13 @@ flowchart TD
 | Asset kinds: device, sensor, machine, vehicle, equipment (+ custom) | Have |
 | Capabilities (signals, units, thresholds, writable) | Have (model + UI editor) |
 | External refs + manufacturer / model / serial / metadata | Have |
-| Asset relationships (parent/child, install history) | Later |
+| Asset relationships (parent/child, install history) | Partial (tables only; no API or UI) |
 | Bulk import/export (CSV/JSON) | Have (`/api/v1/assets/export`, `/import` + Assets UI) |
 | Asset barcode / QR / NFC identity | Later |
 | Spare parts / BOM linked to asset | Later |
 | Warranties, purchase date, depreciation | Later |
 | Documents / photos / manuals attached to asset | Later |
-| Asset templates / catalogs | Later |
+| Asset templates / catalogs | Partial (`asset_templates` table; no API or UI) |
 
 ## 2. Sites and geography
 
@@ -76,7 +78,7 @@ flowchart TD
 | Lat/lng on sites and assets | Have |
 | MapLibre full-bleed map, filters, detail card, dark basemap | Have |
 | Site edit / delete | Have |
-| Site hierarchy (campus → building → floor → zone) | Later |
+| Site hierarchy (campus → building → floor → zone) | Partial (`GET`/`POST /api/v1/locations`; no console) |
 | Geofences + enter/exit events | Later |
 | Indoor maps / floorplans | Later |
 | Clustering at large pin counts | Have (MapLibre cluster layers) |
@@ -158,7 +160,7 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Feature | Status |
 | --- | --- |
 | Overview health / incidents / work / activity | Have |
-| SSE stream API | Have |
+| SSE stream API | Have (single-use ticket; session token in the URL is rejected) |
 | UI subscribe to SSE | Have |
 | Onboarding wizard (`/onboarding`) | Have |
 | Global command palette | Have |
@@ -174,13 +176,18 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Audit log + Admin token rotate | Have |
 | Severity policy editor (Admin) | Have |
 | Org-scoped queries / isolation tests | Have |
-| Roles / RBAC (viewer, operator, admin) | Have (write gate + invite UX) |
-| Invite users / password reset | Have |
+| Roles / RBAC (viewer, operator, admin) | Have (incidents, connectors, actions, and audit included) |
+| Invite users / password reset | Have (SMTP in production; demo may log the link) |
 | API keys for humans vs connectors | Have |
+| Production bootstrap (`YARD_MODE`) | Have |
+| Login rate limit, logout, session revoke | Have (limiter is in-process) |
+| Encrypted connector secrets | Have |
+| Outbound egress policy | Have |
+| Readiness (`/readyz` checks the database) | Have |
 | SSO (OIDC/SAML) | Partial (OIDC discovery via `GET /api/v1/auth/oidc`; browser callback not implemented) |
 | Multi-tenant product UX | Later |
 | Soft-delete + retention | Later |
-| Secrets vault for connector credentials | Have (encrypted connector secrets + redacted API) |
+| Secrets vault for connector credentials | Have (AES-GCM at rest, redacted API; not an external vault) |
 | Compliance exports | Later |
 
 ## 9. UX / product surfaces
