@@ -112,6 +112,7 @@ flowchart TD
 | --- | --- |
 | Open / ack / assign / resolve incidents | Have |
 | Auto-open from threshold + stale automations | Have |
+| Threshold debounce and hysteresis | Have (`debounce_sec` and `hysteresis` on the rule) |
 | Create work order from incident | Have |
 | Work order list + mark done | Have |
 | Work order create UI (standalone) | Have |

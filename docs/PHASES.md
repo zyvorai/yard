@@ -20,7 +20,8 @@ Closing loop for the product:
 | 2. Reliable Actions | Have | Durable jobs, backoff, retry and cancel, connector sync, leader lock, live-event relay, action approval, shared login limits | Playbook approvals stay in program 6 |
 | 3. Maintenance Operations | Have | Locations, templates, links, schedules, QR labels, files, parts and labor, Field page | Skills and shifts stay in program 12 |
 | 4. Telemetry Data Platform | Have | Retention, typed values, hourly rollups, remote write, OTLP JSON, MQTT, saved dashboards | Timescale and histogram payloads |
-| 5–16 | Planned | Names and order in `internal/platform` | All of the behavior described in those phases |
+| 5. Intelligent Incident Management | Partial | Debounce and hysteresis on threshold rules | Flapping counts, parent incidents, SLAs, on-call, timeline |
+| 6–16 | Planned | Names and order in `internal/platform` | All of the behavior described in those phases |
 
 The public lab at `http://175.110.122.71:18081` runs **demo** mode. Demo credentials are valid there on purpose. A production install must set `YARD_MODE=production` (see [SECURITY.md](../SECURITY.md)).
 
@@ -102,9 +103,11 @@ Ingest accepts the existing observation JSON, a snappy-compressed Prometheus rem
 
 Not built: a Timescale extension, histogram or image payloads, and a free-form query builder.
 
-## 5. Intelligent Incident Management (Planned)
+## 5. Intelligent Incident Management (Partial)
 
-Hysteresis, debounce, flapping, parent incidents, acknowledgement and resolution SLAs, on-call rotations, and a command-center timeline. Today an automation opens one incident and a severity policy attaches a runbook. `sla_due_at` is a timestamp on the work order, not an escalation engine.
+A threshold rule can set `debounce_sec` and `hysteresis` in its config. The first sample over the line only starts a hold. The action runs after a later sample is still over the line and at least that many seconds have passed. A reading that falls below the threshold by more than `hysteresis` clears the hold. The Automations form has both fields. An open incident for the same title still suppresses a second one.
+
+Not built: flapping counts, parent incidents, acknowledgement and resolution SLAs, on-call rotations, and a command-center timeline.
 
 ## 6. Safe Automation and Playbook Engine (Planned)
 

@@ -30,6 +30,16 @@ function specFor(action: string): ActionSpec {
   return ACTION_SPECS[action] || simpleAction();
 }
 
+function withTiming(config: string, debounce: string, hysteresis: string) {
+  let cfg: Record<string, unknown> = {};
+  try { cfg = JSON.parse(config || "{}"); } catch { cfg = {}; }
+  const d = Number(debounce);
+  const h = Number(hysteresis);
+  if (d > 0) cfg.debounce_sec = d;
+  if (h > 0) cfg.hysteresis = h;
+  return JSON.stringify(cfg);
+}
+
 function describeAction(a: Automation): string {
   let cfg: Record<string, unknown> = {};
   try { cfg = JSON.parse(a.config || "{}"); } catch { /* malformed config, show action name only */ }
@@ -39,7 +49,7 @@ function describeAction(a: Automation): string {
 
 const emptyForm = {
   name: "", trigger_kind: "threshold", capability: "temperature", operator: "gt",
-  threshold: "75", action: "open_incident",
+  threshold: "75", action: "open_incident", debounce: "", hysteresis: "",
 };
 
 export default function Automations() {
@@ -75,7 +85,7 @@ export default function Automations() {
       operator: form.operator,
       threshold: Number(form.threshold) || 0,
       action: form.action,
-      config: specFor(form.action).buildConfig(actionValues),
+      config: withTiming(specFor(form.action).buildConfig(actionValues), form.debounce, form.hysteresis),
     };
     try {
       await api("/api/v1/automations", { method: "POST", body: JSON.stringify(body) });
@@ -124,6 +134,8 @@ export default function Automations() {
                   </select>
                 </label>
                 <label>Threshold<input type="number" step="any" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: e.target.value })} /></label>
+                <label>Debounce seconds<input type="number" min={0} step="1" value={form.debounce} onChange={(e) => setForm({ ...form, debounce: e.target.value })} placeholder="0" /></label>
+                <label>Hysteresis<input type="number" min={0} step="any" value={form.hysteresis} onChange={(e) => setForm({ ...form, hysteresis: e.target.value })} placeholder="0" /></label>
               </>
             )}
             {(form.trigger_kind === "capability_min" || form.trigger_kind === "capability_max") && (

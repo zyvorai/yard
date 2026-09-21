@@ -318,3 +318,42 @@ func TestUnknownAssetRejected(t *testing.T) {
 		t.Fatal("expected unknown asset error")
 	}
 }
+
+func TestDebounceAndHysteresis(t *testing.T) {
+	st, eng, orgID, _ := setup(t)
+	ctx := context.Background()
+	if err := st.CreateAutomation(ctx, &model.Automation{
+		OrganizationID: orgID, Name: "Slow pressure", Enabled: true,
+		TriggerKind: "threshold", Capability: "pressure", Operator: "gt", Threshold: 75,
+		Action: "open_incident", Config: `{"debounce_sec":3600,"hysteresis":10}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
+	ingest := func(v float64, at time.Time, key string) {
+		t.Helper()
+		_, ok, err := eng.IngestObservation(ctx, orgID, model.IngestObservation{
+			AssetExternalRef: "SIM-TEMP-A", Capability: "pressure", Value: v, ObservedAt: at, DedupeKey: key,
+		}, "sim")
+		if err != nil || !ok {
+			t.Fatalf("ingest %s: %v %v", key, err, ok)
+		}
+	}
+	ingest(80, t0, "p1")
+	ingest(70, t0.Add(10*time.Minute), "p2")
+	incs, err := st.ListIncidents(ctx, orgID, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incs) != 0 {
+		t.Fatalf("opened early: %d", len(incs))
+	}
+	ingest(82, t0.Add(2*time.Hour), "p3")
+	incs, err = st.ListIncidents(ctx, orgID, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incs) != 1 {
+		t.Fatalf("want 1 incident, got %d", len(incs))
+	}
+}

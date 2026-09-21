@@ -37,7 +37,7 @@ An observation can be a number, a bool, or text. Numeric readings older than 24 
 | Order | Program | Intent |
 | ---: | --- | --- |
 | 4 | Telemetry Data Platform | Retention, typed values, hourly rollups, remote write, OTLP JSON, MQTT, and saved dashboards are in. Timescale and histograms are not |
-| 5 | Intelligent Incident Management | De-duplication, SLAs, on-call, one incident for a flood of symptoms |
+| 5 | Intelligent Incident Management | Debounce and hysteresis are in. Flapping counts, parent incidents, SLAs, and on-call are not |
 | 6 | Safe Automation and Playbook Engine | Multi-step recovery with dry-run and approval |
 | 7 | Asset Digital Twin and Operations Graph | Dependencies, blast radius, indoor maps |
 | 8 | Integration Hub | Connector SDK and enterprise systems, still optional to the core |

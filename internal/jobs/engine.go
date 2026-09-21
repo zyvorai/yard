@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -412,6 +413,16 @@ func (e *Engine) applyAutomations(ctx context.Context, orgID string, asset *mode
 			continue
 		}
 		if !hit {
+			if a.TriggerKind != "threshold" || clearHold(a, obs.Value) {
+				_ = e.Store.ClearAutomationHold(ctx, orgID, a.ID, asset.ID)
+			}
+			continue
+		}
+		ready, err := e.debounceReady(ctx, orgID, asset.ID, a, obs.ObservedAt)
+		if err != nil {
+			return err
+		}
+		if !ready {
 			continue
 		}
 		if err := e.runAutomationAction(ctx, orgID, asset, a, obs); err != nil {
@@ -463,6 +474,58 @@ func configString(cfg, key string) string {
 	}
 	v, _ := m[key].(string)
 	return v
+}
+
+func configFloat(cfg, key string) float64 {
+	var m map[string]any
+	if json.Unmarshal([]byte(cfg), &m) != nil {
+		return 0
+	}
+	switch v := m[key].(type) {
+	case float64:
+		return v
+	case string:
+		f, _ := strconv.ParseFloat(v, 64)
+		return f
+	default:
+		return 0
+	}
+}
+
+// debounceReady waits until the condition has held for debounce_sec. Zero
+// means fire on the first hit. A later miss clears the hold unless the value
+// is still inside the hysteresis band.
+func (e *Engine) debounceReady(ctx context.Context, orgID, assetID string, a model.Automation, at time.Time) (bool, error) {
+	sec := configFloat(a.Config, "debounce_sec")
+	if sec <= 0 {
+		return true, nil
+	}
+	since, ok, err := e.Store.AutomationHold(ctx, orgID, a.ID, assetID)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, e.Store.SetAutomationHold(ctx, orgID, a.ID, assetID, at)
+	}
+	if at.Sub(since) < time.Duration(sec*float64(time.Second)) {
+		return false, nil
+	}
+	return true, e.Store.ClearAutomationHold(ctx, orgID, a.ID, assetID)
+}
+
+func clearHold(a model.Automation, value float64) bool {
+	band := configFloat(a.Config, "hysteresis")
+	if band <= 0 {
+		return true
+	}
+	switch a.Operator {
+	case "gt", "gte":
+		return value < a.Threshold-band
+	case "lt", "lte":
+		return value > a.Threshold+band
+	default:
+		return true
+	}
 }
 
 // postJSON POSTs a JSON payload to url and records an audit entry. Transport

@@ -248,6 +248,13 @@ ALTER TABLE observations ADD COLUMN value_text TEXT NOT NULL DEFAULT '';`},
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS dashboards_org ON dashboards(organization_id, updated_at);`},
+	{18, `CREATE TABLE IF NOT EXISTS automation_holds (
+  organization_id TEXT NOT NULL,
+  automation_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  since TEXT NOT NULL,
+  PRIMARY KEY (organization_id, automation_id, asset_id)
+);`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
