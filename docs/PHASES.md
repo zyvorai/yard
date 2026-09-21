@@ -19,7 +19,7 @@ Closing loop for the product:
 | 1. Production Foundation | Have | Modes, RBAC, secrets, egress, SSE tickets, readiness, authenticator codes, Vault key fetch, shared login and ingest limits | |
 | 2. Reliable Actions | Have | Durable jobs, backoff, retry and cancel, connector sync, leader lock, live-event relay, action approval, shared login limits | |
 | 3. Maintenance Operations | Have | Locations, templates, links, schedules, QR labels, files, parts and labor, Field page | |
-| 4. Telemetry Data Platform | Have | Retention, typed values, histograms, hourly rollups, remote write, OTLP JSON, MQTT, saved dashboards, filtered query, export | Timescale extension |
+| 4. Telemetry Data Platform | Have | Retention, typed values, histograms, hourly rollups, remote write, OTLP JSON, MQTT, saved dashboards, filtered query, export, optional Timescale hypertable | |
 | 5. Intelligent Incident Management | Have | Debounce, hysteresis, flap counts, parent incidents, ack and resolve SLAs, on-call, timeline | |
 | 6. Safe Automation and Playbook Engine | Have | Step editor, dry-run, approval, ordered steps, source refresh | |
 | 7. Asset Digital Twin and Operations Graph | Have | Desired state, twin, blast radius, geofence enter/exit, floorplan pins | |
@@ -105,13 +105,13 @@ Field (`/field`) is the technician page. The first online visit stores open work
 
 ## 4. Telemetry Data Platform (Have)
 
-Observations keep a numeric `value`. `value_kind` is `number` (the default), `bool`, or `text`. A bool or text reading also stores `value_text` and does not trip a numeric threshold. Charts plot numbers only. An organization `retention_days` of 0 keeps every observation. A positive value, set by an admin with `PATCH /api/v1/org`, makes the leader replica delete observations and hourly rollups older than that many days. The same hourly tick first folds numeric observations older than 24 hours into `observation_rollups` (min, max, sum, sample count). History queries return those hourly averages with `source` `rollup`. On PostgreSQL that rollup table is partitioned by month. Timescale is not bundled.
+Observations keep a numeric `value`. `value_kind` is `number` (the default), `bool`, or `text`. A bool or text reading also stores `value_text` and does not trip a numeric threshold. Charts plot numbers only. An organization `retention_days` of 0 keeps every observation. A positive value, set by an admin with `PATCH /api/v1/org`, makes the leader replica delete observations and hourly rollups older than that many days. The same hourly tick first folds numeric observations older than 24 hours into `observation_rollups` (min, max, sum, sample count). History queries return those hourly averages with `source` `rollup`. On PostgreSQL that rollup table is partitioned by month. Set `YARD_TIMESCALE=1` against a TimescaleDB image to load the extension and store raw `observations` as a seven-day hypertable; `GET /api/v1/meta` then reports `timescale: true`.
 
 Ingest accepts the existing observation JSON, a snappy-compressed Prometheus remote-write body at `POST /api/v1/ingest/remote-write` (series need an `asset`, `yard_asset`, or `external_ref` label), and OTLP JSON gauges and sums at `POST /api/v1/ingest/otlp/v1/metrics` (`yard.asset` or `service.name`). `YARD_MQTT_URL` subscribes to `yard/+/observations` (override with `YARD_MQTT_TOPIC`). The payload is the same observation JSON. When more than one organization exists, set `YARD_MQTT_ORG`.
 
 `GET` and `POST /api/v1/dashboards`, and `PATCH` or `DELETE /api/v1/dashboards/{id}`, store up to 12 panels. Each panel is an asset and a capability. The Dashboards page draws the last day of that signal.
 
-`GET /api/v1/telemetry/query` filters by `asset_id`, `capability`, `from`, and `to`. A histogram observation stores `count`, `sum`, and `buckets` and does not trip a numeric threshold. Timescale is not installed. On PostgreSQL the rollup table is partitioned by month.
+`GET /api/v1/telemetry/query` filters by `asset_id`, `capability`, `from`, and `to`. A histogram observation stores `count`, `sum`, and `buckets` and does not trip a numeric threshold. On PostgreSQL the rollup table is partitioned by month. Optional TimescaleDB is `YARD_TIMESCALE=1` with a TimescaleDB image.
 
 ## 5. Intelligent Incident Management (Have)
 

@@ -11,3 +11,7 @@ One replica. SQLite on a local volume (`replicaCount: 1` and a `file:` database 
 PostgreSQL and two replicas. Set `databaseUrl` to a `postgres://` or `postgresql://` URL. Helm refuses `replicaCount` greater than 1 with any other URL, because two processes cannot share a SQLite file. Each replica claims queued jobs. On Postgres that claim uses `FOR UPDATE SKIP LOCKED`. If another replica already took the row, SQLite tries the next queued id. Ingest counts in one table so the processes share a budget. `YARD_REGION` is stamped on new events.
 
 `YARD_REGION` is stamped on new events. Set `YARD_PEER_URL` and `YARD_PEER_TOKEN` to post those events to another Yard. The receiver keeps the source region and does not forward them again. The public lab runs one region.
+
+## Timescale (optional)
+
+Point `databaseUrl` at a TimescaleDB image and set `YARD_TIMESCALE=1` (Helm `timescale: "1"`). Yard loads the extension and stores raw observations as a seven-day hypertable. Dedupe keys move to `observation_dedupe` because unique indexes on a hypertable must include the time column. Monthly rollup partitions stay declarative Postgres. Compose profile: `docker compose --profile timescale up --build`.

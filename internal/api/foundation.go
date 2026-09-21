@@ -70,6 +70,7 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 		"smtp":         mail.Configured(),
 		"public_url":   s.Runtime.PublicURL,
 		"insecure_tls": s.Runtime.Mode == "demo" || s.Runtime.AllowInsecureTLS,
+		"timescale":    s.Store != nil && s.Store.Timescale,
 	})
 }
 

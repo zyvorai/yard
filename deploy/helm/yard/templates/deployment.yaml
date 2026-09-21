@@ -41,6 +41,8 @@ spec:
               value: {{ .Values.egressAllowlist | quote }}
             - name: YARD_ALLOW_INSECURE_TLS
               value: {{ .Values.allowInsecureTLS | quote }}
+            - name: YARD_TIMESCALE
+              value: {{ .Values.timescale | quote }}
             {{- if .Values.oidc.enabled }}
             - name: YARD_OIDC_ISSUER
               value: {{ .Values.oidc.issuer | quote }}

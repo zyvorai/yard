@@ -10,7 +10,8 @@ import (
 
 // postgresRollupMigration is the Postgres form of migration 16. The rollup
 // table is range-partitioned by month on bucket_start. SQLite keeps the
-// plain table from the shared migration list. Timescale is not required.
+// plain table from the shared migration list. Set YARD_TIMESCALE=1 against a
+// TimescaleDB image to also store raw observations as a hypertable.
 const postgresRollupMigration = `CREATE TABLE IF NOT EXISTS observation_rollups (
   organization_id TEXT NOT NULL,
   asset_id TEXT NOT NULL,
@@ -51,15 +52,24 @@ func (s *Store) EnsureRollupPartitions(ctx context.Context, bucket time.Time) er
 // DownsampleBefore folds numeric observations older than cutoff into hourly
 // average buckets and deletes those raw rows. Bool and text readings stay raw.
 func (s *Store) DownsampleBefore(ctx context.Context, cutoff time.Time) (int64, error) {
-	hourExpr := `substr(observed_at,1,13)`
-	if s.Dialect == "postgres" {
-		hourExpr = `substring(observed_at from 1 for 13)`
-	}
 	cutoffS := cutoff.UTC().Format(time.RFC3339Nano)
-	q := fmt.Sprintf(`SELECT organization_id, asset_id, capability, %s, COUNT(*), MIN(value), MAX(value), SUM(value), MAX(unit)
+	var q string
+	if s.Timescale {
+		// time_bucket needs timestamptz; YARD_TIMESCALE converts observed_at.
+		q = `SELECT organization_id, asset_id, capability, to_char(time_bucket('1 hour', observed_at), 'YYYY-MM-DD"T"HH24'), COUNT(*), MIN(value), MAX(value), SUM(value), MAX(unit)
+FROM observations
+WHERE value_kind='number' AND observed_at < ?
+GROUP BY organization_id, asset_id, capability, time_bucket('1 hour', observed_at)`
+	} else {
+		hourExpr := `substr(observed_at,1,13)`
+		if s.Dialect == "postgres" {
+			hourExpr = `substring(observed_at from 1 for 13)`
+		}
+		q = fmt.Sprintf(`SELECT organization_id, asset_id, capability, %s, COUNT(*), MIN(value), MAX(value), SUM(value), MAX(unit)
 FROM observations
 WHERE value_kind='number' AND observed_at < ?
 GROUP BY organization_id, asset_id, capability, %s`, hourExpr, hourExpr)
+	}
 	rows, err := s.query(ctx, q, cutoffS)
 	if err != nil {
 		return 0, err

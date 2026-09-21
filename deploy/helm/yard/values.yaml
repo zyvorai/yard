@@ -13,6 +13,8 @@ secretKey: ""
 corsOrigins: ""
 egressAllowlist: ""
 allowInsecureTLS: "0"
+# Set to "1" only when databaseUrl points at a TimescaleDB image.
+timescale: "0"
 
 service:
   type: ClusterIP

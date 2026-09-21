@@ -75,7 +75,51 @@ services:
       timeout: 3s
       retries: 8
 
+  # TimescaleDB store: docker compose --profile timescale up --build
+  timescale:
+    profiles: ["timescale"]
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_USER: yard
+      POSTGRES_PASSWORD: yard
+      POSTGRES_DB: yard
+    ports:
+      - "5433:5432"
+    volumes:
+      - yard-ts:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yard -d yard"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  yard-ts:
+    profiles: ["timescale"]
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      YARD_LISTEN: ":8080"
+      YARD_DATABASE_URL: "postgres://yard:yard@timescale:5432/yard?sslmode=disable"
+      YARD_TIMESCALE: "1"
+      YARD_DATA_DIR: /var/lib/yard
+      YARD_URL: http://127.0.0.1:8082
+    volumes:
+      - yard-ts-data:/var/lib/yard
+    depends_on:
+      timescale:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+
 volumes:
   yard-data:
   yard-pg:
   yard-pg-data:
+  yard-ts:
+  yard-ts-data:

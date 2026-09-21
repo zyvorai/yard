@@ -18,9 +18,10 @@ import (
 )
 
 type Store struct {
-	DB      *sql.DB
-	Dialect string // "sqlite" or "postgres"
-	dsn     string
+	DB        *sql.DB
+	Dialect   string // "sqlite" or "postgres"
+	Timescale bool   // observations hypertable when YARD_TIMESCALE=1
+	dsn       string
 }
 
 func Open(dsn string) (*Store, error) {
@@ -44,6 +45,10 @@ func Open(dsn string) (*Store, error) {
 	}
 	s := &Store{DB: db, Dialect: dialect, dsn: normalized}
 	if err := s.migrate(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := s.maybeEnableTimescale(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -1200,6 +1205,15 @@ func (s *Store) InsertObservation(ctx context.Context, o *model.Observation) (bo
 	}
 	if o.Quality == "" {
 		o.Quality = "good"
+	}
+	if s.Timescale && o.DedupeKey != "" {
+		res, err := s.exec(ctx, `INSERT INTO observation_dedupe(organization_id, dedupe_key) VALUES(?,?) ON CONFLICT DO NOTHING`, o.OrganizationID, o.DedupeKey)
+		if err != nil {
+			return false, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return false, nil
+		}
 	}
 	_, err := s.exec(ctx, `INSERT INTO observations(id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key,value_kind,value_text)
 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.ID, o.OrganizationID, o.AssetID, o.Capability, o.Value, o.Unit, o.Quality, o.Source, o.ObservedAt.Format(time.RFC3339Nano), o.ReceivedAt.Format(time.RFC3339Nano), o.DedupeKey, obsKind(o.ValueKind), o.ValueText)
