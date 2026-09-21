@@ -98,7 +98,7 @@ flowchart TD
 | Historical charts / sparklines / time-range query | Have |
 | Multi-signal dashboards per asset | Have |
 | Capability min/max enforcement + soft/hard alarms | Have (`capability_min`/`capability_max` automation triggers) |
-| Metric retention / downsampling | Later |
+| Metric retention / downsampling | Partial (admin sets `retention_days`; downsampling later) |
 | Anomaly detection | Later |
 | Export telemetry (CSV, Prometheus, OTLP) | Later |
 

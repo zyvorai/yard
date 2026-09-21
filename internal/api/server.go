@@ -108,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/admin/users", s.withUser(s.adminUsers))
 	mux.HandleFunc("/api/v1/api-keys", s.withUser(s.apiKeys))
 	mux.HandleFunc("/api/v1/overview", s.withUser(s.overview))
+	mux.HandleFunc("/api/v1/org", s.withUser(s.org))
 	mux.HandleFunc("/api/v1/sites", s.withUser(s.sites))
 	mux.HandleFunc("/api/v1/sites/", s.withUser(s.siteItem))
 	mux.HandleFunc("/api/v1/assets", s.withUser(s.assets))

@@ -32,9 +32,11 @@ Live updates use a one-time ticket:
 
 ## Planned after that
 
+Telemetry retention is the start of the data platform: an admin sets how many days of observations to keep, and the leader replica deletes the rest. Typed values, downsampling, more ingest paths, and dashboards are still planned.
+
 | Order | Program | Intent |
 | ---: | --- | --- |
-| 4 | Telemetry Data Platform | Typed values, retention, downsampling, more ingest paths, dashboards |
+| 4 | Telemetry Data Platform | Retention is in. Typed values, downsampling, more ingest, and dashboards are not |
 | 5 | Intelligent Incident Management | De-duplication, SLAs, on-call, one incident for a flood of symptoms |
 | 6 | Safe Automation and Playbook Engine | Multi-step recovery with dry-run and approval |
 | 7 | Asset Digital Twin and Operations Graph | Dependencies, blast radius, indoor maps |

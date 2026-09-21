@@ -223,6 +223,7 @@ CREATE INDEX IF NOT EXISTS attachments_asset ON attachments(organization_id, ass
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS work_order_lines_wo ON work_order_lines(organization_id, work_order_id);`},
+	{14, `ALTER TABLE organizations ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 0;`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this

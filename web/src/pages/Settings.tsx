@@ -1,3 +1,5 @@
+import { FormEvent, useEffect, useState } from "react";
+import { api } from "../lib/api";
 import { useTheme } from "../lib/theme";
 import { GroupedList, GroupedRow } from "../components/GroupedList";
 
@@ -12,6 +14,31 @@ function AppearanceIcon() {
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
+  const [admin, setAdmin] = useState(false);
+  const [days, setDays] = useState("0");
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    void (async () => {
+      const [me, org] = await Promise.all([
+        api<{ role: string }>("/api/v1/auth/me"),
+        api<{ retention_days: number }>("/api/v1/org"),
+      ]);
+      setAdmin(me.role === "admin");
+      setDays(String(org.retention_days ?? 0));
+    })();
+  }, []);
+
+  async function saveRetention(e: FormEvent) {
+    e.preventDefault();
+    setMsg("");
+    try {
+      await api("/api/v1/org", { method: "PATCH", body: JSON.stringify({ retention_days: Number(days) }) });
+      setMsg(Number(days) === 0 ? "Observations are kept" : `Observations older than ${days} days are removed`);
+    } catch (ex) {
+      setMsg(ex instanceof Error ? ex.message : "save failed");
+    }
+  }
 
   return (
     <>
@@ -39,6 +66,17 @@ export default function Settings() {
             }
           />
         </GroupedList>
+        {admin && (
+          <form className="card" onSubmit={saveRetention} style={{ marginTop: 16 }}>
+            <h2>Telemetry retention</h2>
+            <p className="lede">0 keeps every observation. Any other number deletes readings older than that many days. The leader replica runs the purge about once an hour.</p>
+            <label>Days
+              <input type="number" min={0} max={3650} value={days} onChange={(e) => setDays(e.target.value)} />
+            </label>
+            <button className="btn small accent" type="submit" style={{ marginTop: 8 }}>Save</button>
+            {msg && <p className="lede">{msg}</p>}
+          </form>
+        )}
       </div>
     </>
   );

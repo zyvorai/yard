@@ -71,7 +71,54 @@ func (e *Engine) StartLiveRelay(ctx context.Context) {
 	})
 }
 
-// StartStaleTicker marks stale assets for every org on an interval until ctx ends.
+// StartRetention drops observations older than each organization's retention window.
+// Zero days keeps every row. The tick runs on the leader replica.
+func (e *Engine) StartRetention(ctx context.Context, every time.Duration) {
+	if every <= 0 {
+		every = time.Hour
+	}
+	go func() {
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				err := e.Store.WithLeader(ctx, func(ctx context.Context) error {
+					return e.RunRetention(ctx, time.Now().UTC())
+				})
+				if err != nil && !errors.Is(err, store.ErrNotLeader) && e.Log != nil {
+					e.Log.Error("retention", "err", err)
+				}
+			}
+		}
+	}()
+}
+
+func (e *Engine) RunRetention(ctx context.Context, now time.Time) error {
+	orgs, err := e.Store.ListOrgIDs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, org := range orgs {
+		days, err := e.Store.RetentionDays(ctx, org)
+		if err != nil {
+			return err
+		}
+		if days <= 0 {
+			continue
+		}
+		n, err := e.Store.PurgeObservationsBefore(ctx, org, now.Add(-time.Duration(days)*24*time.Hour))
+		if err != nil {
+			return err
+		}
+		if n > 0 && e.Log != nil {
+			e.Log.Info("retention purged", "org", org, "count", n, "days", days)
+		}
+	}
+	return nil
+}
 func (e *Engine) StartStaleTicker(ctx context.Context, every time.Duration) {
 	if every <= 0 {
 		every = 30 * time.Second

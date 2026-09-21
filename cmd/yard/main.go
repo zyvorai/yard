@@ -80,6 +80,7 @@ func main() {
 	srv.Engine.StartStaleTicker(runCtx, 30*time.Second)
 	srv.Engine.StartActionSweeper(runCtx, 60*time.Second)
 	srv.Engine.StartMaintenance(runCtx, 30*time.Second)
+	srv.Engine.StartRetention(runCtx, time.Hour)
 	srv.Engine.StartLiveRelay(runCtx)
 	if srv.Queue != nil {
 		srv.Queue.Start(runCtx, 2*time.Second)

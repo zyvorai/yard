@@ -19,7 +19,8 @@ Closing loop for the product:
 | 1. Production Foundation | Have | Modes, RBAC, secrets, egress, SSE tickets, readiness | OIDC login, MFA, Vault, distributed rate limits |
 | 2. Reliable Actions | Have | Durable jobs, backoff, retry and cancel, connector sync, leader lock, live-event relay, action approval, shared login limits | Playbook approvals stay in program 6 |
 | 3. Maintenance Operations | Have | Locations, templates, links, schedules, QR labels, files, parts and labor, Field page | Skills and shifts stay in program 12 |
-| 4–16 | Planned | Names and order in `internal/platform` | All of the behavior described in those phases |
+| 4. Telemetry Data Platform | Partial | Observation retention in days, purged by the leader | Typed values, downsampling, extra ingest, dashboards |
+| 5–16 | Planned | Names and order in `internal/platform` | All of the behavior described in those phases |
 
 The public lab at `http://175.110.122.71:18081` runs **demo** mode. Demo credentials are valid there on purpose. A production install must set `YARD_MODE=production` (see [SECURITY.md](../SECURITY.md)).
 
@@ -91,9 +92,11 @@ Parts and labor are lines on a work order (`kind` `part` or `labor`, quantity, u
 
 Field (`/field`) is the technician page. The first online visit stores open work orders on the device. Completing one offline queues the note and status, and the page sends them when the network returns. A service worker caches the console shell so the page can open with no connection. It does not cache manuals or run skills, shifts, or permits (those stay in program 12).
 
-## 4. Telemetry Data Platform (Planned)
+## 4. Telemetry Data Platform (Partial)
 
-Typed values beyond the current numeric `observations.value`, retention and downsampling, partitioned or Timescale storage, MQTT / remote-write / OTLP ingest, and a dashboard builder. Observations today are float values with quality, source, and timestamps. Historical charts exist per asset. There is no retention policy and no wallboard.
+Observations are still numeric `value` rows with quality, source, and timestamps. An organization `retention_days` of 0 keeps them all. A positive value, set by an admin with `PATCH /api/v1/org`, makes the leader replica delete observations older than that many days about once an hour. Historical charts per asset are unchanged.
+
+Not built yet: typed values, downsampling, partitioned or Timescale storage, MQTT / remote-write / OTLP ingest, and a dashboard builder.
 
 ## 5. Intelligent Incident Management (Planned)
 
