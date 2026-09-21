@@ -9,6 +9,7 @@ import (
 
 	"github.com/zyvorai/yard/internal/connectors"
 	"github.com/zyvorai/yard/internal/idgen"
+	"github.com/zyvorai/yard/internal/model"
 	"github.com/zyvorai/yard/internal/store"
 )
 
@@ -42,6 +43,9 @@ func (w *Worker) Start(ctx context.Context, every time.Duration) {
 }
 
 func (w *Worker) Tick(ctx context.Context) error {
+	_ = w.Store.WithLeader(ctx, func(ctx context.Context) error {
+		return w.scheduleDueSync(ctx)
+	})
 	job, err := w.Store.ClaimJob(ctx, w.Name)
 	if err != nil || job == nil {
 		return err
@@ -51,11 +55,7 @@ func (w *Worker) Tick(ctx context.Context) error {
 		if job.Attempts >= job.MaxAttempts {
 			return w.Store.FailJob(ctx, job.ID, status, result, runErr.Error(), true)
 		}
-		backoff := time.Duration(job.Attempts*job.Attempts) * time.Second
-		if backoff < 2*time.Second {
-			backoff = 2 * time.Second
-		}
-		return w.Store.RetryJob(ctx, job.ID, result, runErr.Error(), time.Now().UTC().Add(backoff))
+		return w.Store.RetryJob(ctx, job.ID, result, runErr.Error(), time.Now().UTC().Add(Backoff(job.Attempts)))
 	}
 	return w.Store.CompleteJob(ctx, job.ID, status, result)
 }
@@ -78,7 +78,9 @@ func (w *Worker) run(ctx context.Context, job *store.Job) (status, result string
 			return "failed", "", err
 		}
 		_ = w.Store.SetActionStatus(ctx, p.ActionID, "running", "")
+		start := time.Now()
 		st, res, err := w.Dispatch.Execute(ctx, job.OrganizationID, conn, p.Action, p.Payload)
+		_ = w.Store.RecordConnectorProbe(ctx, conn.ID, errString(err), int(time.Since(start).Milliseconds()), err == nil)
 		_ = w.Store.CompleteAction(ctx, p.ActionID, st, res)
 		return st, res, err
 	default:
@@ -86,15 +88,36 @@ func (w *Worker) run(ctx context.Context, job *store.Job) (status, result string
 	}
 }
 
-// EnqueueRemoteAction records a queued action and a durable job.
-func EnqueueRemoteAction(ctx context.Context, st *store.Store, orgID, actionID, connectorID, action, payload string) (*store.Job, error) {
+// Backoff doubles from 2s on each attempt and stops at 60s.
+// attempts is the count already recorded on the job (1 after the first claim).
+func Backoff(attempts int) time.Duration {
+	if attempts < 1 {
+		attempts = 1
+	}
+	shift := attempts - 1
+	if shift > 5 {
+		shift = 5
+	}
+	d := 2 * time.Second * time.Duration(uint(1)<<shift)
+	if d > 60*time.Second {
+		return 60 * time.Second
+	}
+	return d
+}
+
+// EnqueueRemoteAction records a durable job for a connector action.
+// status is queued, or pending_approval when a second person must approve.
+func EnqueueRemoteAction(ctx context.Context, st *store.Store, orgID, actionID, connectorID, action, payload, requestedBy, status string) (*store.Job, error) {
+	if status == "" {
+		status = "queued"
+	}
 	body, _ := json.Marshal(map[string]string{
-		"action_id": actionID, "connector_id": connectorID, "action": action, "payload": payload,
+		"action_id": actionID, "connector_id": connectorID, "action": action, "payload": payload, "requested_by": requestedBy,
 	})
 	job := &store.Job{
 		OrganizationID: orgID,
 		Kind:           "remote_action",
-		Status:         "queued",
+		Status:         status,
 		MaxAttempts:    5,
 		Payload:        string(body),
 		RunAfter:       time.Now().UTC(),
@@ -103,4 +126,69 @@ func EnqueueRemoteAction(ctx context.Context, st *store.Store, orgID, actionID, 
 		return nil, err
 	}
 	return job, nil
+}
+
+// NeedsApproval reports connector actions that must be approved by a second operator.
+func NeedsApproval(action string) bool {
+	switch action {
+	case "lifecycle.request", "update.delegate", "reboot", "shutdown", "wipe", "firmware.update", "power.off", "factory.reset":
+		return true
+	default:
+		return false
+	}
+}
+
+func (w *Worker) scheduleDueSync(ctx context.Context) error {
+	due, err := w.Store.ConnectorsDueSync(ctx, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	for _, c := range due {
+		if c.Endpoint == "" {
+			continue
+		}
+		open, err := w.Store.OpenJobForConnector(ctx, c.OrganizationID, c.ID)
+		if err != nil || open {
+			continue
+		}
+		action := syncAction(c.Actions)
+		act := &model.ActionRequest{
+			OrganizationID: c.OrganizationID,
+			ConnectorID:    &c.ID,
+			Action:         action,
+			IdempotencyKey: idgen.New("idem"),
+			Status:         "queued",
+			Payload:        "{}",
+			ExpiresAt:      time.Now().UTC().Add(15 * time.Minute),
+		}
+		if err := w.Store.CreateAction(ctx, act); err != nil {
+			continue
+		}
+		if _, err := EnqueueRemoteAction(ctx, w.Store, c.OrganizationID, act.ID, c.ID, action, "{}", "", "queued"); err != nil {
+			continue
+		}
+	}
+	return nil
+}
+
+func syncAction(actions string) string {
+	var list []string
+	if json.Unmarshal([]byte(actions), &list) == nil {
+		for _, a := range list {
+			if a == "inventory.refresh" || a == "telemetry.receive" {
+				return a
+			}
+		}
+		if len(list) > 0 && !NeedsApproval(list[0]) {
+			return list[0]
+		}
+	}
+	return "inventory.refresh"
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

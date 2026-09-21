@@ -60,6 +60,7 @@ func TestRBACMatrixViewerForbidden(t *testing.T) {
 	}{
 		{"POST", "/api/v1/incidents", `{"title":"x","severity":"warning"}`},
 		{"POST", "/api/v1/actions", `{"action":"diagnostics.read"}`},
+		{"POST", "/api/v1/jobs/job_missing/retry", ""},
 		{"PATCH", "/api/v1/connectors", `{"id":"missing"}`},
 		{"POST", "/api/v1/sites", `{"name":"x"}`},
 		{"POST", "/api/v1/work-orders", `{"title":"x"}`},

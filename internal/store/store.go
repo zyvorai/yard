@@ -18,6 +18,7 @@ import (
 type Store struct {
 	DB      *sql.DB
 	Dialect string // "sqlite" or "postgres"
+	dsn     string
 }
 
 func Open(dsn string) (*Store, error) {
@@ -39,7 +40,7 @@ func Open(dsn string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping %s: %w", dialect, err)
 	}
-	s := &Store{DB: db, Dialect: dialect}
+	s := &Store{DB: db, Dialect: dialect, dsn: normalized}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -180,6 +181,36 @@ CREATE TABLE IF NOT EXISTS asset_links (
   relation TEXT NOT NULL,
   created_at TEXT NOT NULL
 );`},
+	{10, `CREATE TABLE IF NOT EXISTS login_attempts (
+  id TEXT PRIMARY KEY,
+  attempt_key TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_attempts_key_time ON login_attempts(attempt_key, created_at);
+ALTER TABLE connectors ADD COLUMN last_error TEXT NOT NULL DEFAULT '';
+ALTER TABLE connectors ADD COLUMN last_latency_ms INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE connectors ADD COLUMN sync_interval_sec INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS live_events (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  origin TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS live_events_time ON live_events(created_at);`},
+	{11, `ALTER TABLE work_orders ADD COLUMN last_fired_at TEXT NOT NULL DEFAULT '';`},
+	{12, `CREATE TABLE IF NOT EXISTS attachments (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS attachments_asset ON attachments(organization_id, asset_id);`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
@@ -736,12 +767,14 @@ func ts(t *time.Time) any {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
+const assetSelect = `id,organization_id,site_id,name,external_ref,kind,status,health,manufacturer,model,serial,latitude,longitude,last_seen_at,stale_after_sec,metadata,created_at,updated_at,parent_asset_id,location_id,template_id`
+
 func (s *Store) AssetByRef(ctx context.Context, orgID, ref string) (*model.Asset, error) {
-	return s.getAsset(ctx, `SELECT id,organization_id,site_id,name,external_ref,kind,status,health,manufacturer,model,serial,latitude,longitude,last_seen_at,stale_after_sec,metadata,created_at,updated_at FROM assets WHERE organization_id=? AND external_ref=?`, orgID, ref)
+	return s.getAsset(ctx, `SELECT `+assetSelect+` FROM assets WHERE organization_id=? AND external_ref=?`, orgID, ref)
 }
 
 func (s *Store) AssetByID(ctx context.Context, orgID, id string) (*model.Asset, error) {
-	return s.getAsset(ctx, `SELECT id,organization_id,site_id,name,external_ref,kind,status,health,manufacturer,model,serial,latitude,longitude,last_seen_at,stale_after_sec,metadata,created_at,updated_at FROM assets WHERE organization_id=? AND id=?`, orgID, id)
+	return s.getAsset(ctx, `SELECT `+assetSelect+` FROM assets WHERE organization_id=? AND id=?`, orgID, id)
 }
 
 func (s *Store) getAsset(ctx context.Context, q string, args ...any) (*model.Asset, error) {
@@ -756,10 +789,12 @@ func scanAsset(row scannable) (*model.Asset, error) {
 	var lat, lng sql.NullFloat64
 	var last, created, updated string
 	var lastN sql.NullString
-	if err := row.Scan(&a.ID, &a.OrganizationID, &site, &a.Name, &a.ExternalRef, &a.Kind, &a.Status, &a.Health, &a.Manufacturer, &a.Model, &a.Serial, &lat, &lng, &lastN, &a.StaleAfterSec, &a.Metadata, &created, &updated); err != nil {
+	var parent, location, template sql.NullString
+	if err := row.Scan(&a.ID, &a.OrganizationID, &site, &a.Name, &a.ExternalRef, &a.Kind, &a.Status, &a.Health, &a.Manufacturer, &a.Model, &a.Serial, &lat, &lng, &lastN, &a.StaleAfterSec, &a.Metadata, &created, &updated, &parent, &location, &template); err != nil {
 		return nil, err
 	}
 	a.SiteID = nullS(site)
+	a.ParentAssetID, a.LocationID, a.TemplateID = nullS(parent), nullS(location), nullS(template)
 	a.Latitude, a.Longitude = nullF(lat), nullF(lng)
 	a.LastSeenAt = parseTimePtr(lastN)
 	_ = last
@@ -769,7 +804,7 @@ func scanAsset(row scannable) (*model.Asset, error) {
 }
 
 func (s *Store) ListAssets(ctx context.Context, orgID, q, kind, health string) ([]model.Asset, error) {
-	query := `SELECT id,organization_id,site_id,name,external_ref,kind,status,health,manufacturer,model,serial,latitude,longitude,last_seen_at,stale_after_sec,metadata,created_at,updated_at FROM assets WHERE organization_id=?`
+	query := `SELECT ` + assetSelect + ` FROM assets WHERE organization_id=?`
 	args := []any{orgID}
 	if kind != "" {
 		query += ` AND kind=?`
@@ -1156,20 +1191,21 @@ func (s *Store) UpdateWorkOrder(ctx context.Context, wo *model.WorkOrder) error 
 }
 
 func (s *Store) GetWorkOrder(ctx context.Context, orgID, id string) (*model.WorkOrder, error) {
-	row := s.queryRow(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at FROM work_orders WHERE organization_id=? AND id=?`, orgID, id)
+	row := s.queryRow(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at,last_fired_at FROM work_orders WHERE organization_id=? AND id=?`, orgID, id)
 	return scanWO(row)
 }
 
 func scanWO(row scannable) (*model.WorkOrder, error) {
 	var wo model.WorkOrder
-	var asset, site, inc, due, sla sql.NullString
+	var asset, site, inc, due, sla, fired sql.NullString
 	var created, updated string
-	if err := row.Scan(&wo.ID, &wo.OrganizationID, &asset, &site, &inc, &wo.Title, &wo.Kind, &wo.Priority, &wo.Status, &wo.Assignee, &wo.Notes, &wo.Checklist, &wo.ScheduleCron, &due, &sla, &created, &updated); err != nil {
+	if err := row.Scan(&wo.ID, &wo.OrganizationID, &asset, &site, &inc, &wo.Title, &wo.Kind, &wo.Priority, &wo.Status, &wo.Assignee, &wo.Notes, &wo.Checklist, &wo.ScheduleCron, &due, &sla, &created, &updated, &fired); err != nil {
 		return nil, err
 	}
 	wo.AssetID, wo.SiteID, wo.IncidentID = nullS(asset), nullS(site), nullS(inc)
 	wo.DueAt = parseTimePtr(due)
 	wo.SLADueAt = parseTimePtr(sla)
+	wo.LastFiredAt = parseTimePtr(fired)
 	wo.CreatedAt, wo.UpdatedAt = parseTime(created), parseTime(updated)
 	if wo.Checklist == "" {
 		wo.Checklist = "[]"
@@ -1178,7 +1214,7 @@ func scanWO(row scannable) (*model.WorkOrder, error) {
 }
 
 func (s *Store) ListWorkOrders(ctx context.Context, orgID, status string) ([]model.WorkOrder, error) {
-	q := `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at FROM work_orders WHERE organization_id=?`
+	q := `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at,last_fired_at FROM work_orders WHERE organization_id=?`
 	args := []any{orgID}
 	if status != "" {
 		q += ` AND status=?`
@@ -1297,7 +1333,7 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, c.ID, c.OrganizationID, c.Name, c.Kind, c.Stat
 }
 
 func (s *Store) ListConnectors(ctx context.Context, orgID string) ([]model.Connector, error) {
-	rows, err := s.query(ctx, `SELECT id,organization_id,name,kind,status,endpoint,token_hint,actions,config,last_sync_at,created_at FROM connectors WHERE organization_id=? ORDER BY name`, orgID)
+	rows, err := s.query(ctx, `SELECT id,organization_id,name,kind,status,endpoint,token_hint,actions,config,last_sync_at,last_error,last_latency_ms,sync_interval_sec,created_at FROM connectors WHERE organization_id=? ORDER BY name`, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -1307,7 +1343,7 @@ func (s *Store) ListConnectors(ctx context.Context, orgID string) ([]model.Conne
 		var c model.Connector
 		var last sql.NullString
 		var created string
-		if err := rows.Scan(&c.ID, &c.OrganizationID, &c.Name, &c.Kind, &c.Status, &c.Endpoint, &c.TokenHint, &c.Actions, &c.Config, &last, &created); err != nil {
+		if err := rows.Scan(&c.ID, &c.OrganizationID, &c.Name, &c.Kind, &c.Status, &c.Endpoint, &c.TokenHint, &c.Actions, &c.Config, &last, &c.LastError, &c.LastLatencyMs, &c.SyncIntervalSec, &created); err != nil {
 			return nil, err
 		}
 		c.LastSyncAt = parseTimePtr(last)
@@ -1321,11 +1357,11 @@ func (s *Store) ListConnectors(ctx context.Context, orgID string) ([]model.Conne
 }
 
 func (s *Store) ConnectorByTokenHash(ctx context.Context, hash string) (*model.Connector, error) {
-	row := s.queryRow(ctx, `SELECT id,organization_id,name,kind,status,endpoint,token_hint,token_hash,actions,config,last_sync_at,created_at FROM connectors WHERE token_hash=?`, hash)
+	row := s.queryRow(ctx, `SELECT id,organization_id,name,kind,status,endpoint,token_hint,token_hash,actions,config,last_sync_at,last_error,last_latency_ms,sync_interval_sec,created_at FROM connectors WHERE token_hash=?`, hash)
 	var c model.Connector
 	var last sql.NullString
 	var created string
-	if err := row.Scan(&c.ID, &c.OrganizationID, &c.Name, &c.Kind, &c.Status, &c.Endpoint, &c.TokenHint, &c.TokenHash, &c.Actions, &c.Config, &last, &created); err != nil {
+	if err := row.Scan(&c.ID, &c.OrganizationID, &c.Name, &c.Kind, &c.Status, &c.Endpoint, &c.TokenHint, &c.TokenHash, &c.Actions, &c.Config, &last, &c.LastError, &c.LastLatencyMs, &c.SyncIntervalSec, &created); err != nil {
 		return nil, err
 	}
 	c.LastSyncAt = parseTimePtr(last)
@@ -1334,16 +1370,29 @@ func (s *Store) ConnectorByTokenHash(ctx context.Context, hash string) (*model.C
 }
 
 func (s *Store) TouchConnector(ctx context.Context, id string) error {
-	_, err := s.exec(ctx, `UPDATE connectors SET last_sync_at=?, status='connected' WHERE id=?`, now(), id)
+	_, err := s.exec(ctx, `UPDATE connectors SET last_sync_at=?, status='connected', last_error='' WHERE id=?`, now(), id)
+	return err
+}
+
+func (s *Store) RecordConnectorProbe(ctx context.Context, id, errText string, latencyMs int, synced bool) error {
+	if synced {
+		_, err := s.exec(ctx, `UPDATE connectors SET last_sync_at=?, status='connected', last_error='', last_latency_ms=? WHERE id=?`, now(), latencyMs, id)
+		return err
+	}
+	if errText == "" {
+		_, err := s.exec(ctx, `UPDATE connectors SET last_error='', last_latency_ms=? WHERE id=?`, latencyMs, id)
+		return err
+	}
+	_, err := s.exec(ctx, `UPDATE connectors SET last_error=?, last_latency_ms=?, status='error', last_sync_at=? WHERE id=?`, errText, latencyMs, now(), id)
 	return err
 }
 
 func (s *Store) ConnectorByID(ctx context.Context, orgID, id string) (*model.Connector, error) {
-	row := s.queryRow(ctx, `SELECT id,organization_id,name,kind,status,endpoint,token_hint,token_hash,actions,config,last_sync_at,created_at FROM connectors WHERE organization_id=? AND id=?`, orgID, id)
+	row := s.queryRow(ctx, `SELECT id,organization_id,name,kind,status,endpoint,token_hint,token_hash,actions,config,last_sync_at,last_error,last_latency_ms,sync_interval_sec,created_at FROM connectors WHERE organization_id=? AND id=?`, orgID, id)
 	var c model.Connector
 	var last sql.NullString
 	var created string
-	if err := row.Scan(&c.ID, &c.OrganizationID, &c.Name, &c.Kind, &c.Status, &c.Endpoint, &c.TokenHint, &c.TokenHash, &c.Actions, &c.Config, &last, &created); err != nil {
+	if err := row.Scan(&c.ID, &c.OrganizationID, &c.Name, &c.Kind, &c.Status, &c.Endpoint, &c.TokenHint, &c.TokenHash, &c.Actions, &c.Config, &last, &c.LastError, &c.LastLatencyMs, &c.SyncIntervalSec, &created); err != nil {
 		return nil, err
 	}
 	c.LastSyncAt = parseTimePtr(last)
@@ -1352,8 +1401,8 @@ func (s *Store) ConnectorByID(ctx context.Context, orgID, id string) (*model.Con
 }
 
 func (s *Store) UpdateConnector(ctx context.Context, orgID string, c *model.Connector) error {
-	_, err := s.exec(ctx, `UPDATE connectors SET name=?, status=?, endpoint=?, actions=?, config=? WHERE organization_id=? AND id=?`,
-		c.Name, c.Status, c.Endpoint, c.Actions, c.Config, orgID, c.ID)
+	_, err := s.exec(ctx, `UPDATE connectors SET name=?, status=?, endpoint=?, actions=?, config=?, sync_interval_sec=? WHERE organization_id=? AND id=?`,
+		c.Name, c.Status, c.Endpoint, c.Actions, c.Config, c.SyncIntervalSec, orgID, c.ID)
 	return err
 }
 
@@ -1554,7 +1603,7 @@ func (s *Store) ListEventsForAsset(ctx context.Context, orgID, assetID string, l
 }
 
 func (s *Store) ListWorkOrdersForAsset(ctx context.Context, orgID, assetID string) ([]model.WorkOrder, error) {
-	rows, err := s.query(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at FROM work_orders WHERE organization_id=? AND asset_id=? ORDER BY created_at DESC LIMIT 100`, orgID, assetID)
+	rows, err := s.query(ctx, `SELECT id,organization_id,asset_id,site_id,incident_id,title,kind,priority,status,assignee,notes,checklist,schedule_cron,due_at,sla_due_at,created_at,updated_at,last_fired_at FROM work_orders WHERE organization_id=? AND asset_id=? ORDER BY created_at DESC LIMIT 100`, orgID, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -1836,15 +1885,7 @@ func (s *Store) ClaimJob(ctx context.Context, worker string) (*Job, error) {
 
 func (s *Store) getJob(ctx context.Context, id string) (*Job, error) {
 	row := s.queryRow(ctx, `SELECT id,organization_id,kind,status,attempts,max_attempts,payload,result,error,run_after,locked_by,locked_at,created_at,updated_at,completed_at FROM jobs WHERE id=?`, id)
-	var j Job
-	var runAfter, created, updated string
-	var locked, completed sql.NullString
-	if err := row.Scan(&j.ID, &j.OrganizationID, &j.Kind, &j.Status, &j.Attempts, &j.MaxAttempts, &j.Payload, &j.Result, &j.Error, &runAfter, &j.LockedBy, &locked, &created, &updated, &completed); err != nil {
-		return nil, err
-	}
-	j.RunAfter, j.CreatedAt, j.UpdatedAt = parseTime(runAfter), parseTime(created), parseTime(updated)
-	j.LockedAt, j.CompletedAt = parseTimePtr(locked), parseTimePtr(completed)
-	return &j, nil
+	return scanJob(row)
 }
 
 func (s *Store) CompleteJob(ctx context.Context, id, status, result string) error {
@@ -1878,17 +1919,85 @@ func (s *Store) RetryJob(ctx context.Context, id, result, errText string, runAft
 	return err
 }
 
+func (s *Store) ListJobs(ctx context.Context, orgID string, limit int) ([]Job, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := s.query(ctx, `SELECT id,organization_id,kind,status,attempts,max_attempts,payload,result,error,run_after,locked_by,locked_at,created_at,updated_at,completed_at FROM jobs WHERE organization_id=? ORDER BY created_at DESC LIMIT ?`, orgID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Job
+	for rows.Next() {
+		j, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *j)
+	}
+	if out == nil {
+		out = []Job{}
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) JobForOrg(ctx context.Context, orgID, id string) (*Job, error) {
+	row := s.queryRow(ctx, `SELECT id,organization_id,kind,status,attempts,max_attempts,payload,result,error,run_after,locked_by,locked_at,created_at,updated_at,completed_at FROM jobs WHERE organization_id=? AND id=?`, orgID, id)
+	return scanJob(row)
+}
+
+func scanJob(sc interface{ Scan(...any) error }) (*Job, error) {
+	var j Job
+	var runAfter, created, updated string
+	var locked, completed sql.NullString
+	if err := sc.Scan(&j.ID, &j.OrganizationID, &j.Kind, &j.Status, &j.Attempts, &j.MaxAttempts, &j.Payload, &j.Result, &j.Error, &runAfter, &j.LockedBy, &locked, &created, &updated, &completed); err != nil {
+		return nil, err
+	}
+	j.RunAfter, j.CreatedAt, j.UpdatedAt = parseTime(runAfter), parseTime(created), parseTime(updated)
+	j.LockedAt, j.CompletedAt = parseTimePtr(locked), parseTimePtr(completed)
+	return &j, nil
+}
+
+// CancelQueuedJob marks a queued job cancelled. Running jobs are left alone.
+func (s *Store) CancelQueuedJob(ctx context.Context, orgID, id string) error {
+	res, err := s.exec(ctx, `UPDATE jobs SET status='cancelled', locked_by='', locked_at=NULL, completed_at=?, updated_at=? WHERE organization_id=? AND id=? AND status IN ('queued','pending_approval')`,
+		now(), now(), orgID, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// RequeueDeadJob puts a dead or failed job back on the queue with attempts reset.
+func (s *Store) RequeueDeadJob(ctx context.Context, orgID, id string, runAfter time.Time) error {
+	res, err := s.exec(ctx, `UPDATE jobs SET status='queued', attempts=0, error='', run_after=?, locked_by='', locked_at=NULL, completed_at=NULL, updated_at=? WHERE organization_id=? AND id=? AND status IN ('dead','failed')`,
+		runAfter.Format(time.RFC3339Nano), now(), orgID, id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *Store) SetActionStatus(ctx context.Context, id, status, result string) error {
 	_, err := s.exec(ctx, `UPDATE action_requests SET status=?, result=? WHERE id=?`, status, result, id)
 	return err
 }
 
 type Location struct {
-	ID             string  `json:"id"`
-	OrganizationID string  `json:"organization_id"`
-	ParentID       *string `json:"parent_id,omitempty"`
-	Name           string  `json:"name"`
-	Kind           string  `json:"kind"`
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id"`
+	ParentID       *string   `json:"parent_id,omitempty"`
+	Name           string    `json:"name"`
+	Kind           string    `json:"kind"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

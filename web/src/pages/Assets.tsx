@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, Asset, downloadAuth, EventItem, Site, WorkOrder } from "../lib/api";
+import { api, Asset, downloadAuth, EventItem, getToken, Site, WorkOrder } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
 import { GroupedList, GroupedRow } from "../components/GroupedList";
 import LocationPicker from "../components/LocationPicker";
@@ -15,6 +15,7 @@ type Detail = {
   work_orders?: WorkOrder[];
 };
 
+type FileRow = { id: string; name: string; size_bytes: number };
 const KINDS = ["device", "sensor", "machine", "vehicle", "equipment"];
 const CUSTOM = "__custom__";
 
@@ -35,6 +36,9 @@ export default function Assets() {
   const [pickOpen, setPickOpen] = useState(false);
   const [capEdit, setCapEdit] = useState(false);
   const [capRows, setCapRows] = useState<Cap[]>([]);
+  const [files, setFiles] = useState<FileRow[]>([]);
+  const [labelURL, setLabelURL] = useState("");
+  const [code, setCode] = useState("");
   const [params] = useSearchParams();
   const [ioMsg, setIoMsg] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -53,9 +57,73 @@ export default function Assets() {
   useEffect(() => { load(); }, [kind]);
 
   async function open(id: string) {
+    if (labelURL) URL.revokeObjectURL(labelURL);
+    setLabelURL("");
     setSel(await api<Detail>(`/api/v1/assets/${id}`));
+    setFiles(await api<FileRow[]>(`/api/v1/assets/${id}/attachments`));
     setTab("Overview");
     setEditing(false);
+  }
+
+  async function showLabel() {
+    if (!sel) return;
+    const res = await fetch(`/api/v1/assets/${sel.asset.id}/label`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) {
+      setErr("Could not load the label");
+      return;
+    }
+    const blob = await res.blob();
+    if (labelURL) URL.revokeObjectURL(labelURL);
+    setLabelURL(URL.createObjectURL(blob));
+  }
+
+  async function uploadFile(file: File) {
+    if (!sel) return;
+    setErr("");
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch(`/api/v1/assets/${sel.asset.id}/attachments`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body,
+    });
+    if (!res.ok) {
+      setErr(await res.text());
+      return;
+    }
+    setFiles(await api<FileRow[]>(`/api/v1/assets/${sel.asset.id}/attachments`));
+  }
+
+  async function downloadFile(file: FileRow) {
+    if (!sel) return;
+    const res = await fetch(`/api/v1/assets/${sel.asset.id}/attachments/${file.id}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) {
+      setErr("Could not download the file");
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function findCode(e: FormEvent) {
+    e.preventDefault();
+    setErr("");
+    try {
+      const asset = await api<Asset>(`/api/v1/assets/lookup?q=${encodeURIComponent(code.trim())}`);
+      setCode("");
+      await open(asset.id);
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : "No asset for that code");
+    }
   }
 
   useEffect(() => {
@@ -244,6 +312,10 @@ export default function Assets() {
         </div>
       </div>
       {ioMsg && <p className="lede" style={{ marginBottom: 12 }}>{ioMsg}</p>}
+      <form className="row-actions" onSubmit={findCode} style={{ marginBottom: 12 }}>
+        <input className="search" placeholder="Label code or yard:asset:…" value={code} onChange={(e) => setCode(e.target.value)} />
+        <button className="btn small ghost" type="submit">Find label</button>
+      </form>
       {formOpen && (
         <form className="card form-card" onSubmit={save} style={{ marginBottom: 16 }}>
           <h2>{editing ? "Edit asset" : "New asset"}</h2>
@@ -323,7 +395,28 @@ export default function Assets() {
               <p className="lede">{sel.asset.manufacturer} {sel.asset.model} · {sel.asset.serial}</p>
               <div className="row-actions" style={{ margin: "8px 0" }}>
                 <button type="button" className="btn small ghost" onClick={startEdit}>Edit</button>
+                <button type="button" className="btn small ghost" onClick={showLabel}>Label</button>
                 <button type="button" className="btn small ghost" onClick={remove}>Delete</button>
+              </div>
+              {labelURL && (
+                <div className="card" style={{ marginBottom: 12 }}>
+                  <img src={labelURL} alt={`QR label for ${sel.asset.name}`} width={180} height={180} />
+                  <p className="lede">{sel.asset.name}</p>
+                  <p className="lede">{sel.asset.serial || sel.asset.external_ref || sel.asset.id}</p>
+                </div>
+              )}
+              <div style={{ margin: "8px 0 12px" }}>
+                <p className="kicker">Files</p>
+                {files.map((f) => (
+                  <button key={f.id} type="button" className="btn small ghost" style={{ marginRight: 8, marginTop: 6 }} onClick={() => downloadFile(f)}>
+                    {f.name}
+                  </button>
+                ))}
+                {!files.length && <p className="lede">No manuals or photos yet.</p>}
+                <label className="btn small ghost" style={{ marginTop: 8, display: "inline-block" }}>
+                  Add file
+                  <input type="file" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadFile(f); e.target.value = ""; }} />
+                </label>
               </div>
               <div className="tabs">
                 {["Overview", "Telemetry", "Activity", "Work", "Integrations"].map((t) => (

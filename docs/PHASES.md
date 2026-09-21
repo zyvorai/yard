@@ -17,8 +17,8 @@ Closing loop for the product:
 | Program | Status | What exists | What is still missing |
 | --- | --- | --- | --- |
 | 1. Production Foundation | Have | Modes, RBAC, secrets, egress, SSE tickets, readiness | OIDC login, MFA, Vault, distributed rate limits |
-| 2. Reliable Actions | Partial | `jobs` table and a worker for `remote_action` | Retries exposed to operators, connector scheduler, replica coordination, approvals |
-| 3. Maintenance Operations | Partial | `locations` API plus hierarchy/template/link tables | Console, QR, preventive-maintenance runner, parts, technician PWA |
+| 2. Reliable Actions | Have | Durable jobs, backoff, retry and cancel, connector sync, leader lock, live-event relay, action approval, shared login limits | Playbook approvals stay in program 6 |
+| 3. Maintenance Operations | Partial | Locations, templates, links, cron schedules, QR labels, asset files | Parts and labor, technician PWA |
 | 4–16 | Planned | Names and order in `internal/platform` | All of the behavior described in those phases |
 
 The public lab at `http://175.110.122.71:18081` runs **demo** mode. Demo credentials are valid there on purpose. A production install must set `YARD_MODE=production` (see [SECURITY.md](../SECURITY.md)).
@@ -69,27 +69,25 @@ Outbound HTTP from Device Agent, Nodra, Fleet, OTA, and automation webhooks uses
 
 OIDC remains discovery only (`GET /api/v1/auth/oidc`). There is no authorization-code callback.
 
-## 2. Reliable Actions (Partial)
+## 2. Reliable Actions (Have)
 
-`POST /api/v1/actions` with a connector inserts the action as `queued` and a `jobs` row of kind `remote_action`, then returns 202. A worker started from `cmd/yard` claims queued jobs, runs the connector, and writes the action result. An action with no connector is recorded locally and completed in the request. Idempotency keys and the expiry sweeper are unchanged.
+`POST /api/v1/actions` with a connector inserts the action as `queued` and a `jobs` row of kind `remote_action`, then returns 202. A worker started from `cmd/yard` claims queued jobs, runs the connector, and writes the action result. Failures wait 2s, then 4s, 8s, 16s, 32s, and then 60s, and become `dead` once `max_attempts` (5) is reached. Operators retry a dead or failed job with `POST /api/v1/jobs/{id}/retry` (attempts reset) and cancel a still-queued or pending job with `POST /api/v1/jobs/{id}/cancel`. Viewers can list `GET /api/v1/jobs` but cannot change them. An action with no connector is recorded locally and completed in the request. Idempotency keys and the expiry sweeper are unchanged.
 
-Not built yet:
-
-- Operator-visible retry, cancel, and dead-letter
-- Backoff policy beyond the worker’s simple reschedule
-- Per-connector sync interval, last error, latency, test-connection, and sync-now
-- Postgres advisory lock so two replicas do not both run schedules
-- Cross-replica live events (`LISTEN/NOTIFY` or a bus)
-- A second approver before dangerous connector actions
-- Login limits stored in the database
+- Connector `sync_interval_sec` (minimum 30s, 0 disables). The leader replica enqueues a sync when the interval has elapsed and no job for that connector is already open. `POST /api/v1/connectors/{id}/test` records latency and the last error. `POST /api/v1/connectors/{id}/sync` queues a sync immediately.
+- Schedule ticks (stale assets, action expiry, connector sync) take a Postgres advisory lock (`pg_try_advisory_lock`). SQLite always runs them, because that deployment is one process. Job claim stays row-level so more than one replica can execute queued work.
+- Live events are inserted in `live_events` and, on Postgres, published with `NOTIFY yard_live`. Other replicas `LISTEN` and fan the event out locally. The writer replica publishes to its own subscribers immediately.
+- `lifecycle.request`, `update.delegate`, `reboot`, `shutdown`, `wipe`, `firmware.update`, `power.off`, and `factory.reset` are stored as `pending_approval`. `POST /api/v1/jobs/{id}/approve` requires a different operator or admin.
+- Login failures are counted in `login_attempts` (10 failures / 15 minutes per IP and email) so the limit is shared by every replica.
 
 ## 3. Maintenance Operations (Partial)
 
 `locations` stores a parent pointer, name, and kind (`region`, `campus`, `building`, `floor`, `zone`, or any string). `GET` and `POST /api/v1/locations` are org-scoped; create requires a write role.
 
-Schema also adds `asset_templates`, `asset_links` (relation names such as `installed-on` or `depends-on`), and nullable `parent_asset_id`, `location_id`, and `template_id` on assets. Nothing in the console or the preventive-maintenance loop reads those columns yet. `schedule_cron` on work orders is still stored and not evaluated.
+Schema also adds `asset_templates`, `asset_links` (relation names such as `installed-on` or `depends-on`), and nullable `parent_asset_id`, `location_id`, and `template_id` on assets. `GET` and `POST /api/v1/asset-templates` and `/api/v1/asset-links` cover those tables. `PATCH /api/v1/assets/{id}` can set the three placement fields. The Locations page lists the place tree and templates.
 
-Not built yet: template APIs, link APIs, QR labels, attachments, a maintenance runner, parts and labor, and an offline technician app.
+A work order with `schedule_cron` is a schedule. Five fields, UTC: minute, hour, day of month, month, weekday (Sunday is 0). `*` or a comma-separated list of numbers. The leader replica checks every 30 seconds and opens one work order the first time that minute matches. A missed minute is not backfilled.
+
+Not built yet: parts and labor, and an offline technician app. A QR label is `GET /api/v1/assets/{id}/label`. A file on an asset is `POST /api/v1/assets/{id}/attachments` (multipart field `file`, 8 MiB). Bytes live under `YARD_DATA_DIR/attachments` at mode `0600`. List and download stay on that asset; delete requires a write role. The Assets page shows the label and the files.
 
 ## 4. Telemetry Data Platform (Planned)
 

@@ -48,11 +48,11 @@ verified against a real running Yard server, not just typechecked.
 | Auth | `/api/v1/auth/login`, `…/logout`, `…/me`, `…/sessions`, `…/accept-invite`, `…/request-reset`, `…/reset`, `…/oidc` |
 | Meta | `/api/v1/meta` (mode; no auth) |
 | Admin | `/api/v1/admin/users` (list/invite/role/deactivate), `/api/v1/api-keys` |
-| Registry | `/api/v1/sites`, `/api/v1/assets`, `…/{id}/capabilities`, `/api/v1/locations` |
+| Registry | `/api/v1/sites`, `/api/v1/assets`, `GET /api/v1/assets/{id}/label`, `GET /api/v1/assets/lookup`, `…/{id}/capabilities`, `/api/v1/locations`, `/api/v1/asset-templates`, `/api/v1/asset-links` |
 | Bulk IO | `/api/v1/assets/export`, `/api/v1/assets/import` |
 | Ops | `/api/v1/telemetry`, `/api/v1/assets/{id}/observations` (optional `capability`/`from`/`to`), `/api/v1/events`, `/api/v1/incidents`, `/api/v1/work-orders` |
 | Policies | `/api/v1/severity-policies` |
-| Platform | `/api/v1/connectors`, `PUT /api/v1/connectors/{id}/secret`, `/api/v1/actions`, `/api/v1/automations`, `/api/v1/audit` |
+| Platform | `/api/v1/connectors`, `PUT /api/v1/connectors/{id}/secret`, `POST /api/v1/connectors/{id}/test`, `POST /api/v1/connectors/{id}/sync`, `/api/v1/actions`, `GET /api/v1/jobs`, `POST /api/v1/jobs/{id}/retry`, `POST /api/v1/jobs/{id}/cancel`, `POST /api/v1/jobs/{id}/approve`, `/api/v1/automations`, `/api/v1/audit` |
 | Live | `POST /api/v1/stream/ticket`, `GET /api/v1/stream?ticket=` |
 | Ingest | `/api/v1/ingest/observations`, `…/inventory`, `…/events` |
 | Misc | `/api/v1/onboarding`, `/api/v1/geocode` |

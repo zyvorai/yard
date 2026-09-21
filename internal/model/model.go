@@ -72,6 +72,9 @@ type Asset struct {
 	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
 	StaleAfterSec  int        `json:"stale_after_sec"`
 	Metadata       string     `json:"metadata"`
+	ParentAssetID  *string    `json:"parent_asset_id,omitempty"`
+	LocationID     *string    `json:"location_id,omitempty"`
+	TemplateID     *string    `json:"template_id,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
@@ -157,6 +160,7 @@ type WorkOrder struct {
 	Notes          string     `json:"notes"`
 	Checklist      string     `json:"checklist"` // JSON array of {id,label,done}
 	ScheduleCron   string     `json:"schedule_cron,omitempty"`
+	LastFiredAt    *time.Time `json:"last_fired_at,omitempty"`
 	DueAt          *time.Time `json:"due_at,omitempty"`
 	SLADueAt       *time.Time `json:"sla_due_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
@@ -164,20 +168,23 @@ type WorkOrder struct {
 }
 
 type Connector struct {
-	ID             string     `json:"id"`
-	OrganizationID string     `json:"organization_id"`
-	Name           string     `json:"name"`
-	Kind           string     `json:"kind"`
-	Status         string     `json:"status"`
-	Endpoint       string     `json:"endpoint"`
-	TokenHint      string     `json:"token_hint"`
-	TokenHash      string     `json:"-"`
-	Actions        string     `json:"actions"`
-	Config         string     `json:"config"`
-	HasSecret      bool       `json:"has_secret"`
-	SecretHint     string     `json:"secret_hint,omitempty"`
-	LastSyncAt     *time.Time `json:"last_sync_at,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	ID              string     `json:"id"`
+	OrganizationID  string     `json:"organization_id"`
+	Name            string     `json:"name"`
+	Kind            string     `json:"kind"`
+	Status          string     `json:"status"`
+	Endpoint        string     `json:"endpoint"`
+	TokenHint       string     `json:"token_hint"`
+	TokenHash       string     `json:"-"`
+	Actions         string     `json:"actions"`
+	Config          string     `json:"config"`
+	HasSecret       bool       `json:"has_secret"`
+	SecretHint      string     `json:"secret_hint,omitempty"`
+	LastSyncAt      *time.Time `json:"last_sync_at,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+	LastLatencyMs   int        `json:"last_latency_ms,omitempty"`
+	SyncIntervalSec int        `json:"sync_interval_sec,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type ActionRequest struct {

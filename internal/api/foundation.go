@@ -15,6 +15,7 @@ import (
 	"github.com/zyvorai/yard/internal/idgen"
 	"github.com/zyvorai/yard/internal/mail"
 	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/queue"
 	"github.com/zyvorai/yard/internal/secrets"
 	"github.com/zyvorai/yard/internal/store"
 )
@@ -62,10 +63,10 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{
-		"mode":          s.Runtime.Mode,
-		"smtp":          mail.Configured(),
-		"public_url":    s.Runtime.PublicURL,
-		"insecure_tls":  s.Runtime.Mode == "demo" || s.Runtime.AllowInsecureTLS,
+		"mode":         s.Runtime.Mode,
+		"smtp":         mail.Configured(),
+		"public_url":   s.Runtime.PublicURL,
+		"insecure_tls": s.Runtime.Mode == "demo" || s.Runtime.AllowInsecureTLS,
 	})
 }
 
@@ -154,6 +155,25 @@ func (s *Server) streamTicket(w http.ResponseWriter, r *http.Request, u *model.U
 }
 
 func (s *Server) putConnectorSecret(w http.ResponseWriter, r *http.Request, u *model.User) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/v1/connectors/")
+	parts := strings.Split(rest, "/")
+	if len(parts) != 2 || parts[0] == "" {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	switch parts[1] {
+	case "test":
+		s.testConnector(w, r, u, parts[0])
+	case "sync":
+		s.syncConnector(w, r, u, parts[0])
+	case "secret":
+		s.rotateConnectorSecret(w, r, u, parts[0])
+	default:
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+	}
+}
+
+func (s *Server) rotateConnectorSecret(w http.ResponseWriter, r *http.Request, u *model.User, id string) {
 	if r.Method != http.MethodPut {
 		writeJSON(w, 405, map[string]string{"error": "method"})
 		return
@@ -161,13 +181,7 @@ func (s *Server) putConnectorSecret(w http.ResponseWriter, r *http.Request, u *m
 	if !s.requireWrite(w, u) {
 		return
 	}
-	rest := strings.TrimPrefix(r.URL.Path, "/api/v1/connectors/")
-	parts := strings.Split(rest, "/")
-	if len(parts) != 2 || parts[1] != "secret" || parts[0] == "" {
-		writeJSON(w, 404, map[string]string{"error": "not found"})
-		return
-	}
-	c, err := s.Store.ConnectorByID(r.Context(), u.OrganizationID, parts[0])
+	c, err := s.Store.ConnectorByID(r.Context(), u.OrganizationID, id)
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "not found"})
 		return
@@ -192,6 +206,98 @@ func (s *Server) putConnectorSecret(w http.ResponseWriter, r *http.Request, u *m
 	_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "connector.secret_rotated", c.ID, c.Name)
 	s.metrics.inc(&s.metrics.secretRotate)
 	writeJSON(w, 200, map[string]any{"id": c.ID, "has_secret": true, "secret_hint": hint})
+}
+
+func (s *Server) testConnector(w http.ResponseWriter, r *http.Request, u *model.User, id string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	if !s.requireWrite(w, u) {
+		return
+	}
+	c, err := s.Store.ConnectorByID(r.Context(), u.OrganizationID, id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	if strings.TrimSpace(c.Endpoint) == "" {
+		writeJSON(w, 400, map[string]string{"error": "endpoint required"})
+		return
+	}
+	if err := s.Runtime.Egress.Validate(c.Endpoint); err != nil {
+		_ = s.Store.RecordConnectorProbe(r.Context(), c.ID, err.Error(), 0, false)
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	client := s.Runtime.Egress.HTTPClient(8*time.Second, false)
+	start := time.Now()
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, c.Endpoint, nil)
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid endpoint"})
+		return
+	}
+	resp, err := client.Do(req)
+	ms := int(time.Since(start).Milliseconds())
+	if err != nil {
+		_ = s.Store.RecordConnectorProbe(r.Context(), c.ID, err.Error(), ms, false)
+		writeJSON(w, 200, map[string]any{"ok": false, "error": err.Error(), "latency_ms": ms})
+		return
+	}
+	resp.Body.Close()
+	_ = s.Store.RecordConnectorProbe(r.Context(), c.ID, "", ms, false)
+	_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "connector.test", c.ID, c.Name)
+	writeJSON(w, 200, map[string]any{"ok": true, "status": resp.StatusCode, "latency_ms": ms})
+}
+
+func (s *Server) syncConnector(w http.ResponseWriter, r *http.Request, u *model.User, id string) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	if !s.requireWrite(w, u) {
+		return
+	}
+	c, err := s.Store.ConnectorByID(r.Context(), u.OrganizationID, id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	if strings.TrimSpace(c.Endpoint) == "" {
+		writeJSON(w, 400, map[string]string{"error": "endpoint required"})
+		return
+	}
+	action := "inventory.refresh"
+	var list []string
+	if json.Unmarshal([]byte(c.Actions), &list) == nil && len(list) > 0 {
+		action = list[0]
+		for _, a := range list {
+			if a == "inventory.refresh" {
+				action = a
+				break
+			}
+		}
+	}
+	act := &model.ActionRequest{
+		OrganizationID: u.OrganizationID,
+		ConnectorID:    &c.ID,
+		Action:         action,
+		IdempotencyKey: idgen.New("idem"),
+		Status:         "queued",
+		Payload:        "{}",
+		ExpiresAt:      time.Now().UTC().Add(15 * time.Minute),
+	}
+	if err := s.Store.CreateAction(r.Context(), act); err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	job, err := queue.EnqueueRemoteAction(r.Context(), s.Store, u.OrganizationID, act.ID, c.ID, action, "{}", u.ID, "queued")
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "connector.sync", c.ID, action)
+	writeJSON(w, 202, map[string]any{"action_id": act.ID, "job_id": job.ID, "status": job.Status})
 }
 
 func (s *Server) connectorSecret(ctx context.Context, conn *model.Connector) (string, error) {

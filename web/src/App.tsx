@@ -7,6 +7,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Overview from "./pages/Overview";
 import Assets from "./pages/Assets";
 import Sites from "./pages/Sites";
+import Locations from "./pages/Locations";
 import MapPage from "./pages/MapPage";
 import Telemetry from "./pages/Telemetry";
 import WorkOrders from "./pages/WorkOrders";
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/" element={<Overview />} />
           <Route path="/assets" element={<Assets />} />
           <Route path="/sites" element={<Sites />} />
+          <Route path="/locations" element={<Locations />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/telemetry" element={<Telemetry />} />
           <Route path="/work" element={<WorkOrders />} />

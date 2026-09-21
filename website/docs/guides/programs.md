@@ -26,9 +26,9 @@ Live updates use a one-time ticket:
 
 ## Started, not finished
 
-**Remote actions.** `POST /api/v1/actions` with a connector returns `202` and a `queued` action. A worker in the Yard process claims a `jobs` row and runs the connector. There is no approval step, no connector health schedule, and no coordination across two replicas.
+**Remote actions.** A connector action returns `202` and a job. Failures back off up to 60s and then sit in `dead` until an operator retries them. Dangerous actions (`lifecycle.request`, `update.delegate`, reboot, shutdown, wipe, firmware, power off) wait in `pending_approval` until a different operator approves. Connectors can be tested, synced now, or scheduled (`sync_interval_sec`). On Postgres, one replica holds the schedule lock, and live events cross processes with `LISTEN`/`NOTIFY`.
 
-**Locations.** `GET` and `POST /api/v1/locations` store a named place with an optional parent. Asset parent, template, and link columns exist in the database. The console does not edit them, and `schedule_cron` on a work order is not a scheduler.
+**Locations.** `GET` and `POST /api/v1/locations` store a named place with an optional parent. The console shows that tree. Asset templates and links have list and create routes. A work order `schedule_cron` such as `0 8 * * 1` opens one work order when that minute arrives. An asset QR label is `GET /api/v1/assets/{id}/label`. Manuals and photos are `POST /api/v1/assets/{id}/attachments` (8 MiB, stored under the data directory). Parts and an offline technician app are still later.
 
 ## Planned after that
 

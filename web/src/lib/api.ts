@@ -58,6 +58,9 @@ export type Asset = {
   model: string;
   serial: string;
   site_id?: string;
+  parent_asset_id?: string;
+  location_id?: string;
+  template_id?: string;
   latitude?: number;
   longitude?: number;
   last_seen_at?: string;
@@ -109,6 +112,7 @@ export type WorkOrder = {
   incident_id?: string;
   asset_id?: string;
   due_at?: string;
+  schedule_cron?: string;
   created_at: string;
 };
 
@@ -172,6 +176,9 @@ export type Connector = {
   has_secret?: boolean;
   secret_hint?: string;
   last_sync_at?: string;
+  last_error?: string;
+  last_latency_ms?: number;
+  sync_interval_sec?: number;
 };
 
 export type AdminUser = {

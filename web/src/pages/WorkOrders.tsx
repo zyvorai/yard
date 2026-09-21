@@ -9,7 +9,7 @@ export default function WorkOrders() {
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState("");
   const [form, setForm] = useState({
-    title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "", due_at: "",
+    title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "", due_at: "", schedule_cron: "",
   });
 
   async function load() {
@@ -43,9 +43,10 @@ export default function WorkOrders() {
     };
     if (form.asset_id) body.asset_id = form.asset_id;
     if (form.due_at) body.due_at = new Date(form.due_at + "T17:00:00Z").toISOString();
+    if (form.schedule_cron.trim()) body.schedule_cron = form.schedule_cron.trim();
     try {
       await api("/api/v1/work-orders", { method: "POST", body: JSON.stringify(body) });
-      setForm({ title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "", due_at: "" });
+      setForm({ title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "", due_at: "", schedule_cron: "" });
       setOpen(false);
       await load();
     } catch (ex) {
@@ -71,6 +72,9 @@ export default function WorkOrders() {
               <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
                 {["repair", "inspection", "installation", "maintenance"].map((k) => <option key={k}>{k}</option>)}
               </select>
+            </label>
+            <label className="span-2">Schedule (optional)
+              <input value={form.schedule_cron} onChange={(e) => setForm({ ...form, schedule_cron: e.target.value })} placeholder="0 8 * * 1" />
             </label>
             <label>Priority
               <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>

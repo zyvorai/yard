@@ -62,13 +62,13 @@ flowchart TD
 | Asset kinds: device, sensor, machine, vehicle, equipment (+ custom) | Have |
 | Capabilities (signals, units, thresholds, writable) | Have (model + UI editor) |
 | External refs + manufacturer / model / serial / metadata | Have |
-| Asset relationships (parent/child, install history) | Partial (tables only; no API or UI) |
+| Asset relationships (parent/child, install history) | Partial (`POST /api/v1/asset-links` and `parent_asset_id`; install history later) |
 | Bulk import/export (CSV/JSON) | Have (`/api/v1/assets/export`, `/import` + Assets UI) |
-| Asset barcode / QR / NFC identity | Later |
+| Asset barcode / QR / NFC identity | Partial (QR label PNG and lookup; NFC later) |
 | Spare parts / BOM linked to asset | Later |
 | Warranties, purchase date, depreciation | Later |
-| Documents / photos / manuals attached to asset | Later |
-| Asset templates / catalogs | Partial (`asset_templates` table; no API or UI) |
+| Documents / photos / manuals attached to asset | Have (8 MiB file on the asset, stored outside the database) |
+| Asset templates / catalogs | Partial (`GET`/`POST /api/v1/asset-templates` and the Locations page; catalogs later) |
 
 ## 2. Sites and geography
 
@@ -78,7 +78,7 @@ flowchart TD
 | Lat/lng on sites and assets | Have |
 | MapLibre full-bleed map, filters, detail card, dark basemap | Have |
 | Site edit / delete | Have |
-| Site hierarchy (campus → building → floor → zone) | Partial (`GET`/`POST /api/v1/locations`; no console) |
+| Site hierarchy (campus → building → floor → zone) | Partial (`GET`/`POST /api/v1/locations` and the Locations page) |
 | Geofences + enter/exit events | Later |
 | Indoor maps / floorplans | Later |
 | Clustering at large pin counts | Have (MapLibre cluster layers) |
@@ -118,7 +118,7 @@ flowchart TD
 | Parts used + time tracking | Later |
 | Mobile field tech mode (PWA) | Later |
 | Multi-asset work orders | Later |
-| Calendar / preventive maintenance schedules | Partial (`schedule_cron` stored; location hierarchy API started; PM scheduler later) |
+| Calendar / preventive maintenance schedules | Partial (five-field `schedule_cron` opens one work order per matching minute; parts, labor, and a technician app later) |
 
 ## 5. Automations and actions
 
@@ -130,7 +130,7 @@ flowchart TD
 | Notify-on-event automation | Have (notify + audit) |
 | Automation rule editor | Have (create / enable / delete) |
 | Webhook / email / Slack / PagerDuty actions | Have (email/Slack/PagerDuty implemented, unverified — no test account) |
-| Remote actions with idempotency + expiry | Partial (durable job queue + worker; approvals later) |
+| Remote actions with idempotency + expiry | Have (durable jobs, backoff, retry, cancel, approval for dangerous actions) |
 | Device Agent `inventory.refresh` / `diagnostics.read` | Have |
 | Two-person action approval | Later |
 | Multi-step playbooks | Later |

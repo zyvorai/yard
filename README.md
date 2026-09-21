@@ -79,7 +79,7 @@ Full tour: [Product tour](https://zyvorai.github.io/yard/tour) · console how-to
 - Optional browser notifications for new **critical** incidents
 - Automations: a literal **threshold**, a capability's own declared **Min/Max range** (no duplicated number to keep in sync), or a **stale** heartbeat, each → open incident, notify, webhook, Slack, email, or PagerDuty
 - Create / enable / delete rules in the Automations console
-- Remote actions carry idempotency keys and expiry. A connector action is queued on a `jobs` row and executed by an in-process worker; an action with no connector is recorded locally
+- Remote actions carry idempotency keys and expiry. A connector action is queued on a `jobs` row and executed by an in-process worker, with exponential backoff up to 60s and operator retry or cancel; an action with no connector is recorded locally
 
 ## Registry, map, and bulk IO
 

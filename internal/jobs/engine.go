@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/zyvorai/yard/internal/egress"
+	"github.com/zyvorai/yard/internal/maintain"
 	"github.com/zyvorai/yard/internal/model"
 	"github.com/zyvorai/yard/internal/sse"
 	"github.com/zyvorai/yard/internal/store"
@@ -25,6 +27,7 @@ type Engine struct {
 	Log    *slog.Logger
 	HTTP   *http.Client
 	Policy *egress.Policy
+	Origin string
 }
 
 func (e *Engine) client() *http.Client {
@@ -38,9 +41,34 @@ func (e *Engine) client() *http.Client {
 }
 
 func (e *Engine) publish(orgID, kind string, payload any) {
+	body, _ := json.Marshal(payload)
+	if e.Store != nil {
+		if id, err := e.Store.InsertLiveEvent(context.Background(), orgID, kind, string(body), e.Origin); err == nil {
+			e.Store.NotifyLive(context.Background(), id)
+		}
+	}
 	if e.Hub != nil {
 		e.Hub.Publish(orgID, kind, payload)
 	}
+}
+
+// StartLiveRelay delivers events written by other replicas.
+// This process already publishes its own events locally.
+func (e *Engine) StartLiveRelay(ctx context.Context) {
+	if e.Store == nil || e.Hub == nil {
+		return
+	}
+	e.Store.ListenLive(ctx, func(id string) {
+		ev, err := e.Store.LiveEvent(context.Background(), id)
+		if err != nil || ev.Origin == e.Origin {
+			return
+		}
+		var payload any
+		if json.Unmarshal([]byte(ev.Payload), &payload) != nil {
+			payload = ev.Payload
+		}
+		e.Hub.Publish(ev.OrganizationID, ev.Kind, payload)
+	})
 }
 
 // StartStaleTicker marks stale assets for every org on an interval until ctx ends.
@@ -56,24 +84,86 @@ func (e *Engine) StartStaleTicker(ctx context.Context, every time.Duration) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				orgs, err := e.Store.ListOrgIDs(ctx)
-				if err != nil {
-					if e.Log != nil {
-						e.Log.Error("stale ticker: list orgs", "err", err)
+				err := e.Store.WithLeader(ctx, func(ctx context.Context) error {
+					orgs, err := e.Store.ListOrgIDs(ctx)
+					if err != nil {
+						return err
 					}
-					continue
-				}
-				for _, org := range orgs {
-					if err := e.MarkStale(ctx, org); err != nil && e.Log != nil {
-						e.Log.Error("stale ticker", "org", org, "err", err)
+					for _, org := range orgs {
+						if err := e.MarkStale(ctx, org); err != nil && e.Log != nil {
+							e.Log.Error("stale ticker", "org", org, "err", err)
+						}
 					}
+					return nil
+				})
+				if err != nil && !errors.Is(err, store.ErrNotLeader) && e.Log != nil {
+					e.Log.Error("stale ticker: list orgs", "err", err)
 				}
 			}
 		}
 	}()
 }
 
-// StartActionSweeper expires queued remote actions past their deadline.
+// StartMaintenance opens work orders from schedule_cron on the leader replica.
+func (e *Engine) StartMaintenance(ctx context.Context, every time.Duration) {
+	if every <= 0 {
+		every = 30 * time.Second
+	}
+	go func() {
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				err := e.Store.WithLeader(ctx, func(ctx context.Context) error {
+					return e.RunMaintenance(ctx, time.Now().UTC())
+				})
+				if err != nil && !errors.Is(err, store.ErrNotLeader) && e.Log != nil {
+					e.Log.Error("maintenance", "err", err)
+				}
+			}
+		}
+	}()
+}
+
+// RunMaintenance fires each due schedule once per matching minute.
+func (e *Engine) RunMaintenance(ctx context.Context, now time.Time) error {
+	list, err := e.Store.ListScheduledWorkOrders(ctx)
+	if err != nil {
+		return err
+	}
+	now = now.UTC()
+	for _, sched := range list {
+		due, err := maintain.Due(sched.ScheduleCron, now)
+		if err != nil || !due {
+			continue
+		}
+		if sched.LastFiredAt != nil && sched.LastFiredAt.UTC().Format("2006-01-02T15:04") == now.Format("2006-01-02T15:04") {
+			continue
+		}
+		child := sched
+		child.ID = ""
+		child.ScheduleCron = ""
+		child.LastFiredAt = nil
+		child.Status = "open"
+		child.CreatedAt = time.Time{}
+		child.UpdatedAt = time.Time{}
+		if child.Kind == "" || child.Kind == "schedule" {
+			child.Kind = "preventive"
+		}
+		child.Notes = "Opened by schedule " + sched.ID
+		if err := e.Store.CreateWorkOrder(ctx, &child); err != nil {
+			return err
+		}
+		if err := e.Store.MarkWorkOrderFired(ctx, sched.ID, now); err != nil {
+			return err
+		}
+		e.publish(sched.OrganizationID, "workorder.created", child)
+	}
+	return nil
+}
 func (e *Engine) StartActionSweeper(ctx context.Context, every time.Duration) {
 	if every <= 0 {
 		every = 60 * time.Second
@@ -86,13 +176,18 @@ func (e *Engine) StartActionSweeper(ctx context.Context, every time.Duration) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				n, err := e.Store.ExpireActions(ctx)
-				if err != nil && e.Log != nil {
+				err := e.Store.WithLeader(ctx, func(ctx context.Context) error {
+					n, err := e.Store.ExpireActions(ctx)
+					if err != nil {
+						return err
+					}
+					if n > 0 && e.Log != nil {
+						e.Log.Info("action sweeper expired", "count", n)
+					}
+					return nil
+				})
+				if err != nil && !errors.Is(err, store.ErrNotLeader) && e.Log != nil {
 					e.Log.Error("action sweeper", "err", err)
-					continue
-				}
-				if n > 0 && e.Log != nil {
-					e.Log.Info("action sweeper expired", "count", n)
 				}
 			}
 		}

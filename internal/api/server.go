@@ -23,6 +23,7 @@ import (
 	"github.com/zyvorai/yard/internal/idgen"
 	"github.com/zyvorai/yard/internal/jobs"
 	"github.com/zyvorai/yard/internal/mail"
+	"github.com/zyvorai/yard/internal/maintain"
 	"github.com/zyvorai/yard/internal/model"
 	"github.com/zyvorai/yard/internal/queue"
 	"github.com/zyvorai/yard/internal/secrets"
@@ -33,18 +34,17 @@ import (
 )
 
 type Server struct {
-	Store        *store.Store
-	Engine       *jobs.Engine
-	Hub          *sse.Hub
-	Static       fs.FS
-	Log          *slog.Logger
-	Dispatch     *connectors.Dispatcher
-	Queue        *queue.Worker
-	Runtime      config.Config
-	tokens       map[string]string
-	limiter      *ingestLimiter
-	loginLimiter *ingestLimiter
-	metrics      *metrics
+	Store    *store.Store
+	Engine   *jobs.Engine
+	Hub      *sse.Hub
+	Static   fs.FS
+	Log      *slog.Logger
+	Dispatch *connectors.Dispatcher
+	Queue    *queue.Worker
+	Runtime  config.Config
+	tokens   map[string]string
+	limiter  *ingestLimiter
+	metrics  *metrics
 }
 
 func New(st *store.Store, logger *slog.Logger) *Server {
@@ -69,22 +69,21 @@ func NewWith(st *store.Store, logger *slog.Logger, cfg config.Config) *Server {
 		cfg.SecretKey = key
 	}
 	hub := sse.New()
-	eng := &jobs.Engine{Store: st, Hub: hub, Log: logger, Policy: cfg.Egress, HTTP: cfg.Egress.HTTPClient(8*time.Second, false)}
+	eng := &jobs.Engine{Store: st, Hub: hub, Log: logger, Policy: cfg.Egress, HTTP: cfg.Egress.HTTPClient(8*time.Second, false), Origin: idgen.New("yard")}
 	d := connectors.NewDispatcher(st)
 	d.Mode = cfg.Mode
 	d.AllowInsecureTLS = cfg.AllowInsecureTLS
 	d.Policy = cfg.Egress
 	s := &Server{
-		Store:        st,
-		Engine:       eng,
-		Hub:          hub,
-		Log:          logger,
-		Dispatch:     d,
-		Runtime:      cfg,
-		tokens:       map[string]string{},
-		limiter:      newIngestLimiter(120, time.Minute),
-		loginLimiter: newIngestLimiter(10, 15*time.Minute),
-		metrics:      &metrics{version: version.Version},
+		Store:    st,
+		Engine:   eng,
+		Hub:      hub,
+		Log:      logger,
+		Dispatch: d,
+		Runtime:  cfg,
+		tokens:   map[string]string{},
+		limiter:  newIngestLimiter(120, time.Minute),
+		metrics:  &metrics{version: version.Version},
 	}
 	d.Secret = s.connectorSecret
 	s.Queue = &queue.Worker{Store: st, Dispatch: d, Log: logger}
@@ -112,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/sites", s.withUser(s.sites))
 	mux.HandleFunc("/api/v1/sites/", s.withUser(s.siteItem))
 	mux.HandleFunc("/api/v1/assets", s.withUser(s.assets))
+	mux.HandleFunc("/api/v1/assets/lookup", s.withUser(s.assetLookup))
 	mux.HandleFunc("/api/v1/assets/", s.withUser(s.assetItem))
 	mux.HandleFunc("/api/v1/telemetry", s.withUser(s.telemetry))
 	mux.HandleFunc("/api/v1/events", s.withUser(s.events))
@@ -122,6 +122,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/connectors", s.withUser(s.connectors))
 	mux.HandleFunc("/api/v1/connectors/", s.withUser(s.putConnectorSecret))
 	mux.HandleFunc("/api/v1/actions", s.withUser(s.actions))
+	mux.HandleFunc("/api/v1/jobs", s.withUser(s.jobs))
+	mux.HandleFunc("/api/v1/jobs/", s.withUser(s.jobItem))
 	mux.HandleFunc("/api/v1/automations", s.withUser(s.automations))
 	mux.HandleFunc("/api/v1/severity-policies", s.withUser(s.severityPolicies))
 	mux.HandleFunc("/api/v1/severity-policies/", s.withUser(s.severityPolicyItem))
@@ -129,6 +131,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/stream/ticket", s.withUser(s.streamTicket))
 	mux.HandleFunc("/api/v1/stream", s.stream)
 	mux.HandleFunc("/api/v1/locations", s.withUser(s.locations))
+	mux.HandleFunc("/api/v1/asset-templates", s.withUser(s.assetTemplates))
+	mux.HandleFunc("/api/v1/asset-links", s.withUser(s.assetLinks))
 	mux.HandleFunc("/api/v1/onboarding", s.withUser(s.onboarding))
 	mux.HandleFunc("/api/v1/geocode", s.withUser(s.geocode))
 	mux.HandleFunc("/api/v1/ingest/observations", s.rateIngest(s.withConnector(s.ingestObs)))
@@ -310,7 +314,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := clientIP(r) + "|" + strings.ToLower(strings.TrimSpace(in.Email))
-	if s.loginLimiter != nil && s.loginLimiter.over(key) {
+	limited, err := s.Store.TooManyLogins(r.Context(), key, 10, time.Now().Add(-15*time.Minute))
+	if err != nil {
+		writeJSON(w, 503, map[string]string{"error": "login limiter unavailable"})
+		return
+	}
+	if limited {
 		s.metrics.inc(&s.metrics.loginLockout)
 		w.Header().Set("Retry-After", "900")
 		writeJSON(w, 429, map[string]string{"error": "too many login attempts"})
@@ -319,12 +328,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	u, err := s.Store.UserByEmail(r.Context(), in.Email)
 	if err != nil || !u.Active || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.Password)) != nil {
 		s.metrics.inc(&s.metrics.loginFail)
-		if s.loginLimiter != nil {
-			s.loginLimiter.allow(key)
-		}
+		_ = s.Store.RecordLoginFailure(r.Context(), key, time.Now().Add(-15*time.Minute))
 		writeJSON(w, 401, map[string]string{"error": "invalid credentials"})
 		return
 	}
+	_ = s.Store.ClearLoginFailures(r.Context(), key)
 	sess, err := s.Store.CreateSession(r.Context(), u.ID, 12*time.Hour)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "session"})
@@ -792,6 +800,14 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		writeJSON(w, 404, map[string]string{"error": "not found"})
 		return
 	}
+	if len(parts) == 2 && parts[1] == "label" && r.Method == http.MethodGet {
+		s.assetLabel(w, a)
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "attachments" {
+		s.assetAttachments(w, r, u, a, parts)
+		return
+	}
 	if len(parts) == 1 && r.Method == http.MethodGet {
 		caps, _ := s.Store.ListCapabilities(r.Context(), a.ID)
 		obs, _ := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, "", time.Time{}, time.Time{}, 80)
@@ -844,6 +860,29 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		}
 		if in.Metadata != "" {
 			a.Metadata = in.Metadata
+		}
+		if in.ParentAssetID != nil || in.LocationID != nil || in.TemplateID != nil {
+			parent, location, template := a.ParentAssetID, a.LocationID, a.TemplateID
+			if in.ParentAssetID != nil {
+				parent = in.ParentAssetID
+			}
+			if in.LocationID != nil {
+				location = in.LocationID
+			}
+			if in.TemplateID != nil {
+				template = in.TemplateID
+			}
+			if location != nil && *location != "" {
+				if err := s.Store.LocationInOrg(r.Context(), u.OrganizationID, *location); err != nil {
+					writeJSON(w, 400, map[string]string{"error": "location not found"})
+					return
+				}
+			}
+			if err := s.Store.SetAssetPlacement(r.Context(), u.OrganizationID, a.ID, parent, location, template); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			a.ParentAssetID, a.LocationID, a.TemplateID = parent, location, template
 		}
 		if !validLatLng(a.Latitude, a.Longitude) {
 			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
@@ -1379,6 +1418,12 @@ func (s *Server) workOrders(w http.ResponseWriter, r *http.Request, u *model.Use
 		if wo.Priority == "" {
 			wo.Priority = "normal"
 		}
+		if wo.ScheduleCron != "" {
+			if _, err := maintain.Due(wo.ScheduleCron, time.Now().UTC()); err != nil {
+				writeJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+		}
 		if wo.Title == "" {
 			writeJSON(w, 400, map[string]string{"error": "title required"})
 			return
@@ -1477,12 +1522,13 @@ func (s *Server) connectors(w http.ResponseWriter, r *http.Request, u *model.Use
 			return
 		}
 		var in struct {
-			ID          string  `json:"id"`
-			Name        *string `json:"name"`
-			Endpoint    *string `json:"endpoint"`
-			Status      *string `json:"status"`
-			Config      *string `json:"config"`
-			RotateToken bool    `json:"rotate_token"`
+			ID              string  `json:"id"`
+			Name            *string `json:"name"`
+			Endpoint        *string `json:"endpoint"`
+			Status          *string `json:"status"`
+			Config          *string `json:"config"`
+			RotateToken     bool    `json:"rotate_token"`
+			SyncIntervalSec *int    `json:"sync_interval_sec"`
 		}
 		if err := readJSON(r, &in); err != nil || in.ID == "" {
 			writeJSON(w, 400, map[string]string{"error": "id required"})
@@ -1518,6 +1564,17 @@ func (s *Server) connectors(w http.ResponseWriter, r *http.Request, u *model.Use
 				writeJSON(w, 400, map[string]string{"error": err.Error()})
 				return
 			}
+		}
+		if in.SyncIntervalSec != nil {
+			if *in.SyncIntervalSec < 0 {
+				writeJSON(w, 400, map[string]string{"error": "sync interval must be >= 0"})
+				return
+			}
+			if *in.SyncIntervalSec > 0 && *in.SyncIntervalSec < 30 {
+				writeJSON(w, 400, map[string]string{"error": "sync interval must be at least 30 seconds"})
+				return
+			}
+			c.SyncIntervalSec = *in.SyncIntervalSec
 		}
 		if err := s.Store.UpdateConnector(r.Context(), u.OrganizationID, c); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1612,6 +1669,9 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 			Payload:        in.Payload,
 			ExpiresAt:      time.Now().UTC().Add(15 * time.Minute),
 		}
+		if conn != nil && s.Queue != nil && queue.NeedsApproval(in.Action) {
+			act.Status = "pending_approval"
+		}
 		if err := s.Store.CreateAction(r.Context(), act); err != nil {
 			writeJSON(w, 409, map[string]string{"error": err.Error()})
 			return
@@ -1621,12 +1681,17 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 			act.Status = "recorded"
 			act.Result = "No connector selected; outcome recorded locally."
 		} else if s.Queue != nil {
-			if _, err := queue.EnqueueRemoteAction(r.Context(), s.Store, u.OrganizationID, act.ID, conn.ID, in.Action, in.Payload); err != nil {
+			status := act.Status
+			if _, err := queue.EnqueueRemoteAction(r.Context(), s.Store, u.OrganizationID, act.ID, conn.ID, in.Action, in.Payload, u.ID, status); err != nil {
 				writeJSON(w, 500, map[string]string{"error": err.Error()})
 				return
 			}
-			act.Status = "queued"
-			act.Result = "queued for worker"
+			act.Status = status
+			if status == "pending_approval" {
+				act.Result = "waiting for a second approver"
+			} else {
+				act.Result = "queued for worker"
+			}
 		} else if s.Dispatch != nil {
 			st, res, err := s.Dispatch.Execute(r.Context(), u.OrganizationID, conn, in.Action, in.Payload)
 			if err != nil && res == "" {
@@ -1854,6 +1919,12 @@ func (s *Server) locations(w http.ResponseWriter, r *http.Request, u *model.User
 			return
 		}
 		in.OrganizationID = u.OrganizationID
+		if in.ParentID != nil && *in.ParentID != "" {
+			if err := s.Store.LocationInOrg(r.Context(), u.OrganizationID, *in.ParentID); err != nil {
+				writeJSON(w, 400, map[string]string{"error": "parent location not found"})
+				return
+			}
+		}
 		if err := s.Store.CreateLocation(r.Context(), &in); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
