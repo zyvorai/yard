@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { clearToken } from "../lib/api";
+import { clearToken, getToken } from "../lib/api";
 import CommandPalette from "./CommandPalette";
 
 function navIcon(d: string) {
@@ -77,6 +77,10 @@ export default function Shell({ children }: { children: ReactNode }) {
   const mapMode = loc.pathname === "/map";
 
   function signOut() {
+    const tok = getToken();
+    if (tok) {
+      void fetch("/api/v1/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${tok}` } });
+    }
     clearToken();
     window.location.href = "/login";
   }

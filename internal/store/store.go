@@ -119,6 +119,67 @@ CREATE UNIQUE INDEX IF NOT EXISTS api_keys_hash ON api_keys(token_hash);`},
 	{4, `ALTER TABLE work_orders ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE work_orders ADD COLUMN sla_due_at TEXT;
 ALTER TABLE work_orders ADD COLUMN schedule_cron TEXT NOT NULL DEFAULT '';`},
+	{5, `CREATE TABLE IF NOT EXISTS connector_secrets (
+  connector_id TEXT PRIMARY KEY,
+  ciphertext TEXT NOT NULL,
+  hint TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);`},
+	{6, `ALTER TABLE sessions ADD COLUMN id TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN created_at TEXT NOT NULL DEFAULT '';`},
+	{7, `CREATE TABLE IF NOT EXISTS stream_tickets (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);`},
+	{8, `CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 5,
+  payload TEXT NOT NULL DEFAULT '{}',
+  result TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '',
+  run_after TEXT NOT NULL,
+  locked_by TEXT NOT NULL DEFAULT '',
+  locked_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(status, run_after);`},
+	{9, `CREATE TABLE IF NOT EXISTS locations (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  parent_id TEXT,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+ALTER TABLE assets ADD COLUMN parent_asset_id TEXT;
+ALTER TABLE assets ADD COLUMN location_id TEXT;
+ALTER TABLE assets ADD COLUMN template_id TEXT;
+CREATE TABLE IF NOT EXISTS asset_templates (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'equipment',
+  capabilities TEXT NOT NULL DEFAULT '[]',
+  stale_after_sec INTEGER NOT NULL DEFAULT 90,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS asset_links (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  from_asset_id TEXT NOT NULL,
+  to_asset_id TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
@@ -455,9 +516,109 @@ func consumeToken(ctx context.Context, s *Store, table, token string) (string, e
 }
 
 func (s *Store) CreateSession(ctx context.Context, userID string, ttl time.Duration) (*model.Session, error) {
-	sess := &model.Session{Token: idgen.Secret(24), UserID: userID, ExpiresAt: time.Now().UTC().Add(ttl)}
-	_, err := s.exec(ctx, `INSERT INTO sessions(token,user_id,expires_at) VALUES(?,?,?)`, sess.Token, sess.UserID, sess.ExpiresAt.Format(time.RFC3339Nano))
+	now := time.Now().UTC()
+	sess := &model.Session{
+		ID:        idgen.New("sess"),
+		Token:     idgen.Secret(24),
+		UserID:    userID,
+		ExpiresAt: now.Add(ttl),
+		CreatedAt: now,
+	}
+	_, err := s.exec(ctx, `INSERT INTO sessions(token,user_id,expires_at,id,created_at) VALUES(?,?,?,?,?)`,
+		sess.Token, sess.UserID, sess.ExpiresAt.Format(time.RFC3339Nano), sess.ID, sess.CreatedAt.Format(time.RFC3339Nano))
 	return sess, err
+}
+
+func (s *Store) ListSessions(ctx context.Context, userID string) ([]model.Session, error) {
+	rows, err := s.query(ctx, `SELECT id, user_id, expires_at, created_at FROM sessions WHERE user_id=? ORDER BY created_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Session
+	for rows.Next() {
+		var sess model.Session
+		var exp, created string
+		if err := rows.Scan(&sess.ID, &sess.UserID, &exp, &created); err != nil {
+			return nil, err
+		}
+		sess.ExpiresAt = parseTime(exp)
+		sess.CreatedAt = parseTime(created)
+		if sess.ExpiresAt.Before(time.Now().UTC()) {
+			continue
+		}
+		out = append(out, sess)
+	}
+	if out == nil {
+		out = []model.Session{}
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteSession(ctx context.Context, userID, id string) error {
+	res, err := s.exec(ctx, `DELETE FROM sessions WHERE user_id=? AND id=?`, userID, id)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res)
+}
+
+func (s *Store) DeleteSessionToken(ctx context.Context, userID, token string) error {
+	_, err := s.exec(ctx, `DELETE FROM sessions WHERE user_id=? AND token=?`, userID, token)
+	return err
+}
+
+func (s *Store) DeleteUserSessions(ctx context.Context, userID string) error {
+	_, err := s.exec(ctx, `DELETE FROM sessions WHERE user_id=?`, userID)
+	return err
+}
+
+func (s *Store) PutConnectorSecret(ctx context.Context, connectorID, ciphertext, hint string) error {
+	_, err := s.exec(ctx, `INSERT INTO connector_secrets(connector_id, ciphertext, hint, updated_at) VALUES(?,?,?,?)
+ON CONFLICT(connector_id) DO UPDATE SET ciphertext=excluded.ciphertext, hint=excluded.hint, updated_at=excluded.updated_at`,
+		connectorID, ciphertext, hint, now())
+	return err
+}
+
+func (s *Store) GetConnectorSecret(ctx context.Context, connectorID string) (ciphertext, hint string, err error) {
+	err = s.queryRow(ctx, `SELECT ciphertext, hint FROM connector_secrets WHERE connector_id=?`, connectorID).Scan(&ciphertext, &hint)
+	return ciphertext, hint, err
+}
+
+func (s *Store) CreateStreamTicket(ctx context.Context, tokenHash, userID, orgID string, ttl time.Duration) error {
+	_, err := s.exec(ctx, `INSERT INTO stream_tickets(token_hash, user_id, organization_id, expires_at) VALUES(?,?,?,?)`,
+		tokenHash, userID, orgID, time.Now().UTC().Add(ttl).Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) ConsumeStreamTicket(ctx context.Context, tokenHash string) (userID, orgID string, err error) {
+	var exp string
+	err = s.queryRow(ctx, `SELECT user_id, organization_id, expires_at FROM stream_tickets WHERE token_hash=?`, tokenHash).Scan(&userID, &orgID, &exp)
+	if err != nil {
+		return "", "", err
+	}
+	_, _ = s.exec(ctx, `DELETE FROM stream_tickets WHERE token_hash=?`, tokenHash)
+	if parseTime(exp).Before(time.Now().UTC()) {
+		return "", "", sql.ErrNoRows
+	}
+	return userID, orgID, nil
+}
+
+func (s *Store) Ping(ctx context.Context) error {
+	return s.DB.PingContext(ctx)
+}
+
+func LatestSchemaVersion() int {
+	if len(migrations) == 0 {
+		return 0
+	}
+	return migrations[len(migrations)-1].version
+}
+
+func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
+	var v int
+	err := s.queryRow(ctx, `SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&v)
+	return v, err
 }
 
 func (s *Store) SessionUser(ctx context.Context, token string) (*model.User, error) {
@@ -1603,4 +1764,169 @@ func (s *Store) ImportAssetRow(ctx context.Context, orgID string, in *model.Asse
 		return nil, "", err
 	}
 	return in, action, nil
+}
+
+// Job is a durable work item claimed by a single worker.
+type Job struct {
+	ID             string
+	OrganizationID string
+	Kind           string
+	Status         string
+	Attempts       int
+	MaxAttempts    int
+	Payload        string
+	Result         string
+	Error          string
+	RunAfter       time.Time
+	LockedBy       string
+	LockedAt       *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	CompletedAt    *time.Time
+}
+
+func (s *Store) CreateJob(ctx context.Context, j *Job) error {
+	if j.ID == "" {
+		j.ID = idgen.New("job")
+	}
+	now := time.Now().UTC()
+	if j.CreatedAt.IsZero() {
+		j.CreatedAt = now
+	}
+	j.UpdatedAt = now
+	if j.Status == "" {
+		j.Status = "queued"
+	}
+	if j.MaxAttempts <= 0 {
+		j.MaxAttempts = 5
+	}
+	if j.Payload == "" {
+		j.Payload = "{}"
+	}
+	if j.RunAfter.IsZero() {
+		j.RunAfter = now
+	}
+	_, err := s.exec(ctx, `INSERT INTO jobs(id,organization_id,kind,status,attempts,max_attempts,payload,result,error,run_after,locked_by,locked_at,created_at,updated_at,completed_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, j.ID, j.OrganizationID, j.Kind, j.Status, j.Attempts, j.MaxAttempts, j.Payload, j.Result, j.Error,
+		j.RunAfter.Format(time.RFC3339Nano), j.LockedBy, ts(j.LockedAt), j.CreatedAt.Format(time.RFC3339Nano), j.UpdatedAt.Format(time.RFC3339Nano), ts(j.CompletedAt))
+	return err
+}
+
+func (s *Store) ClaimJob(ctx context.Context, worker string) (*Job, error) {
+	now := time.Now().UTC()
+	row := s.queryRow(ctx, `SELECT id FROM jobs WHERE status='queued' AND run_after<=? ORDER BY created_at LIMIT 1`, now.Format(time.RFC3339Nano))
+	var id string
+	if err := row.Scan(&id); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	res, err := s.exec(ctx, `UPDATE jobs SET status='running', attempts=attempts+1, locked_by=?, locked_at=?, updated_at=? WHERE id=? AND status='queued'`,
+		worker, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), id)
+	if err != nil {
+		return nil, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil, nil
+	}
+	return s.getJob(ctx, id)
+}
+
+func (s *Store) getJob(ctx context.Context, id string) (*Job, error) {
+	row := s.queryRow(ctx, `SELECT id,organization_id,kind,status,attempts,max_attempts,payload,result,error,run_after,locked_by,locked_at,created_at,updated_at,completed_at FROM jobs WHERE id=?`, id)
+	var j Job
+	var runAfter, created, updated string
+	var locked, completed sql.NullString
+	if err := row.Scan(&j.ID, &j.OrganizationID, &j.Kind, &j.Status, &j.Attempts, &j.MaxAttempts, &j.Payload, &j.Result, &j.Error, &runAfter, &j.LockedBy, &locked, &created, &updated, &completed); err != nil {
+		return nil, err
+	}
+	j.RunAfter, j.CreatedAt, j.UpdatedAt = parseTime(runAfter), parseTime(created), parseTime(updated)
+	j.LockedAt, j.CompletedAt = parseTimePtr(locked), parseTimePtr(completed)
+	return &j, nil
+}
+
+func (s *Store) CompleteJob(ctx context.Context, id, status, result string) error {
+	if status == "" {
+		status = "succeeded"
+	}
+	_, err := s.exec(ctx, `UPDATE jobs SET status=?, result=?, error='', locked_by='', locked_at=NULL, completed_at=?, updated_at=? WHERE id=?`,
+		status, result, now(), now(), id)
+	return err
+}
+
+func (s *Store) FailJob(ctx context.Context, id, status, result, errText string, dead bool) error {
+	st := "failed"
+	if dead {
+		st = "dead"
+	}
+	if status != "" {
+		st = status
+		if dead {
+			st = "dead"
+		}
+	}
+	_, err := s.exec(ctx, `UPDATE jobs SET status=?, result=?, error=?, locked_by='', locked_at=NULL, completed_at=?, updated_at=? WHERE id=?`,
+		st, result, errText, now(), now(), id)
+	return err
+}
+
+func (s *Store) RetryJob(ctx context.Context, id, result, errText string, runAfter time.Time) error {
+	_, err := s.exec(ctx, `UPDATE jobs SET status='queued', result=?, error=?, run_after=?, locked_by='', locked_at=NULL, updated_at=? WHERE id=?`,
+		result, errText, runAfter.Format(time.RFC3339Nano), now(), id)
+	return err
+}
+
+func (s *Store) SetActionStatus(ctx context.Context, id, status, result string) error {
+	_, err := s.exec(ctx, `UPDATE action_requests SET status=?, result=? WHERE id=?`, status, result, id)
+	return err
+}
+
+type Location struct {
+	ID             string  `json:"id"`
+	OrganizationID string  `json:"organization_id"`
+	ParentID       *string `json:"parent_id,omitempty"`
+	Name           string  `json:"name"`
+	Kind           string  `json:"kind"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+func (s *Store) CreateLocation(ctx context.Context, loc *Location) error {
+	if loc.ID == "" {
+		loc.ID = idgen.New("loc")
+	}
+	if loc.CreatedAt.IsZero() {
+		loc.CreatedAt = time.Now().UTC()
+	}
+	if loc.Kind == "" {
+		loc.Kind = "zone"
+	}
+	_, err := s.exec(ctx, `INSERT INTO locations(id,organization_id,parent_id,name,kind,created_at) VALUES(?,?,?,?,?,?)`,
+		loc.ID, loc.OrganizationID, loc.ParentID, loc.Name, loc.Kind, loc.CreatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) ListLocations(ctx context.Context, orgID string) ([]Location, error) {
+	rows, err := s.query(ctx, `SELECT id,organization_id,parent_id,name,kind,created_at FROM locations WHERE organization_id=? ORDER BY name`, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Location
+	for rows.Next() {
+		var loc Location
+		var parent sql.NullString
+		var created string
+		if err := rows.Scan(&loc.ID, &loc.OrganizationID, &parent, &loc.Name, &loc.Kind, &created); err != nil {
+			return nil, err
+		}
+		loc.ParentID = nullS(parent)
+		loc.CreatedAt = parseTime(created)
+		out = append(out, loc)
+	}
+	if out == nil {
+		out = []Location{}
+	}
+	return out, rows.Err()
 }

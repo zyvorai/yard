@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api, AdminUser, APIKeyInfo, Connector, SeverityPolicy } from "../lib/api";
+import { api, AdminUser, APIKeyInfo, Connector, SeverityPolicy, clearToken } from "../lib/api";
 import { fmt, Health } from "../components/Shell";
 import { GroupedList, GroupedRow } from "../components/GroupedList";
 
 type Audit = { id: string; actor: string; action: string; object: string; detail: string; created_at: string };
 type Me = { id: string; email: string; display_name: string; role: string; organization_id: string };
+type SessionInfo = { id: string; expires_at: string; created_at: string };
 
 const emptyInvite = { email: "", display_name: "", role: "viewer" };
 
@@ -47,20 +48,23 @@ export default function Admin() {
   const [inviteForm, setInviteForm] = useState(emptyInvite);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [keyName, setKeyName] = useState("");
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
 
   async function load() {
-    const [audit, cons, user, pols, keys] = await Promise.all([
-      api<Audit[]>("/api/v1/audit"),
+    const [audit, cons, user, pols, keys, sessions] = await Promise.all([
+      api<Audit[]>("/api/v1/audit").catch(() => [] as Audit[]),
       api<Connector[]>("/api/v1/connectors"),
       api<Me>("/api/v1/auth/me"),
       api<SeverityPolicy[]>("/api/v1/severity-policies"),
       api<APIKeyInfo[]>("/api/v1/api-keys"),
+      api<SessionInfo[]>("/api/v1/auth/sessions").catch(() => [] as SessionInfo[]),
     ]);
     setRows(audit);
     setConnectors(cons);
     setMe(user);
     setPolicies(pols);
     setApiKeys(keys);
+    setSessions(sessions);
     if (user.role === "admin") {
       try {
         setUsers(await api<AdminUser[]>("/api/v1/admin/users"));
@@ -221,6 +225,34 @@ export default function Admin() {
           <div className="metric">{policies.length}</div>
           <p className="lede">Match capability or automation → severity + runbook</p>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="topbar" style={{ marginBottom: 12 }}>
+          <h2>Sessions</h2>
+          <button
+            type="button"
+            className="btn small ghost"
+            onClick={async () => {
+              await api("/api/v1/auth/sessions", { method: "DELETE" });
+              clearToken();
+              window.location.href = "/login";
+            }}
+          >
+            Sign out everywhere
+          </button>
+        </div>
+        <ul className="lede">
+          {sessions.map((s) => (
+            <li key={s.id}>
+              {fmt(s.created_at)} · expires {fmt(s.expires_at)}{" "}
+              <button type="button" className="btn small ghost" onClick={async () => { await api(`/api/v1/auth/sessions/${s.id}`, { method: "DELETE" }); await load(); }}>
+                Revoke
+              </button>
+            </li>
+          ))}
+          {!sessions.length && <li>No other active sessions.</li>}
+        </ul>
       </div>
 
       {me?.role === "admin" && (

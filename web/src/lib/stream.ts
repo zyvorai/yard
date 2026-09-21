@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { getToken } from "./api";
+import { api, getToken } from "./api";
 
 export type StreamEvent = { kind: string; data: unknown };
 
@@ -15,10 +15,20 @@ export function useYardStream(onEvent: (ev: StreamEvent) => void, enabled = true
     let timer: number | undefined;
     let delay = 1000;
 
-    function connect() {
+    async function connect() {
       const tok = getToken();
       if (!tok || closed) return;
-      es = new EventSource(`/api/v1/stream?token=${encodeURIComponent(tok)}`);
+      let ticket: { ticket: string };
+      try {
+        ticket = await api<{ ticket: string }>("/api/v1/stream/ticket", { method: "POST" });
+      } catch {
+        if (closed) return;
+        timer = window.setTimeout(connect, delay);
+        delay = Math.min(delay * 2, 15000);
+        return;
+      }
+      if (closed) return;
+      es = new EventSource(`/api/v1/stream?ticket=${encodeURIComponent(ticket.ticket)}`);
       es.onmessage = (msg) => {
         try {
           const parsed = JSON.parse(msg.data) as StreamEvent;

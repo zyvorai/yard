@@ -26,6 +26,18 @@ spec:
               value: {{ .Values.listen | quote }}
             - name: YARD_DATABASE_URL
               value: {{ .Values.databaseUrl | quote }}
+            - name: YARD_MODE
+              value: {{ .Values.mode | quote }}
+            - name: YARD_PUBLIC_URL
+              value: {{ .Values.publicUrl | quote }}
+            - name: YARD_SECRET_KEY
+              value: {{ .Values.secretKey | quote }}
+            - name: YARD_CORS_ORIGINS
+              value: {{ .Values.corsOrigins | quote }}
+            - name: YARD_EGRESS_ALLOWLIST
+              value: {{ .Values.egressAllowlist | quote }}
+            - name: YARD_ALLOW_INSECURE_TLS
+              value: {{ .Values.allowInsecureTLS | quote }}
             {{- if .Values.oidc.enabled }}
             - name: YARD_OIDC_ISSUER
               value: {{ .Values.oidc.issuer | quote }}
@@ -35,7 +47,7 @@ spec:
               value: {{ .Values.oidc.clientSecret | quote }}
             {{- end }}
           readinessProbe:
-            httpGet: {path: /healthz, port: http}
+            httpGet: {path: /readyz, port: http}
             initialDelaySeconds: 3
           livenessProbe:
             httpGet: {path: /healthz, port: http}

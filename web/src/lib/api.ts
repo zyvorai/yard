@@ -169,6 +169,8 @@ export type Connector = {
   token_hint: string;
   actions: string;
   config: string;
+  has_secret?: boolean;
+  secret_hint?: string;
   last_sync_at?: string;
 };
 

@@ -6,20 +6,27 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/zyvorai/yard/internal/connectors/deviceagent"
 	"github.com/zyvorai/yard/internal/connectors/fleet"
 	"github.com/zyvorai/yard/internal/connectors/nodra"
 	"github.com/zyvorai/yard/internal/connectors/ota"
+	"github.com/zyvorai/yard/internal/egress"
 	"github.com/zyvorai/yard/internal/model"
 	"github.com/zyvorai/yard/internal/store"
 )
 
 // Dispatcher executes connector actions. Device Agent, Nodra, Fleet, and OTA
-// run outbound syncs when an endpoint + auth_token are configured.
+// run outbound syncs when an endpoint and a stored secret are configured.
 type Dispatcher struct {
-	Store   *store.Store
-	YardURL string
+	Store            *store.Store
+	YardURL          string
+	Mode             string
+	AllowInsecureTLS bool
+	Policy           *egress.Policy
+	// Secret returns the decrypted connector credential, if any.
+	Secret func(ctx context.Context, conn *model.Connector) (string, error)
 }
 
 func NewDispatcher(st *store.Store) *Dispatcher {
@@ -27,7 +34,7 @@ func NewDispatcher(st *store.Store) *Dispatcher {
 	if base == "" {
 		base = "http://127.0.0.1:8080"
 	}
-	return &Dispatcher{Store: st, YardURL: base}
+	return &Dispatcher{Store: st, YardURL: base, Mode: "demo", Policy: egress.Demo()}
 }
 
 // Execute runs a connector action and returns a human-readable result.
@@ -52,39 +59,22 @@ func (d *Dispatcher) Execute(ctx context.Context, orgID string, conn *model.Conn
 }
 
 func (d *Dispatcher) deviceAgent(ctx context.Context, orgID string, conn *model.Connector, action, payload string) (string, string, error) {
-	endpoint, agentTok := endpointAndToken(conn, payload)
-	if endpoint == "" {
-		endpoint = "http://127.0.0.1:9188"
+	endpoint, agentTok, err := d.endpointAndToken(ctx, conn, payload)
+	if err != nil {
+		return "failed", "", err
 	}
-	if payload != "" && payload != "{}" {
-		var cfg map[string]any
-		if json.Unmarshal([]byte(payload), &cfg) == nil {
-			if u, ok := cfg["agent_url"].(string); ok && u != "" {
-				endpoint = strings.TrimRight(u, "/")
-			}
-		}
+	if endpoint == "" {
+		return "failed", "", fmt.Errorf("connector endpoint required")
+	}
+	if d.tlsRequested(conn.Config) && !d.allowSkipTLS() {
+		return "failed", "", fmt.Errorf("insecure TLS is not allowed in production")
 	}
 	ingestTok, err := d.ingestToken(ctx, orgID)
 	if err != nil {
 		return "failed", "", err
 	}
 	client := deviceagent.New(endpoint, d.YardURL, ingestTok).WithAgentAuth(agentTok)
-	// Lab Device Agents use self-signed TLS; skip verify for https unless explicitly disabled.
-	skipTLS := strings.HasPrefix(strings.ToLower(endpoint), "https://")
-	if v := configString(conn.Config, "tls_insecure"); v == "false" || v == "0" {
-		skipTLS = false
-	}
-	if raw := conn.Config; raw != "" {
-		var m map[string]any
-		if json.Unmarshal([]byte(raw), &m) == nil {
-			if b, ok := m["tls_insecure"].(bool); ok {
-				skipTLS = b
-			}
-		}
-	}
-	if skipTLS {
-		client = client.WithTLSSkipVerify(true)
-	}
+	client.HTTP = d.policy().HTTPClient(12*time.Second, d.allowSkipTLS() && d.tlsRequested(conn.Config))
 	switch action {
 	case "inventory.refresh", "sync":
 		if err := client.Sync(ctx); err != nil {
@@ -105,7 +95,10 @@ func (d *Dispatcher) deviceAgent(ctx context.Context, orgID string, conn *model.
 }
 
 func (d *Dispatcher) nodra(ctx context.Context, orgID string, conn *model.Connector, action, payload string) (string, string, error) {
-	endpoint, token := endpointAndToken(conn, payload)
+	endpoint, token, err := d.endpointAndToken(ctx, conn, payload)
+	if err != nil {
+		return "failed", "", err
+	}
 	if endpoint == "" {
 		return "failed", "", fmt.Errorf("set connector endpoint to the Nodra control-plane URL")
 	}
@@ -114,6 +107,7 @@ func (d *Dispatcher) nodra(ctx context.Context, orgID string, conn *model.Connec
 		return "failed", "", err
 	}
 	client := nodra.New(endpoint, d.YardURL, token, ingestTok)
+	client.HTTP = d.policy().HTTPClient(20*time.Second, false)
 	switch action {
 	case "telemetry.receive", "sync":
 		res, err := client.Sync(ctx)
@@ -129,11 +123,15 @@ func (d *Dispatcher) nodra(ctx context.Context, orgID string, conn *model.Connec
 }
 
 func (d *Dispatcher) fleet(ctx context.Context, orgID string, conn *model.Connector, action, payload string) (string, string, error) {
-	endpoint, token := endpointAndToken(conn, payload)
+	endpoint, token, err := d.endpointAndToken(ctx, conn, payload)
+	if err != nil {
+		return "failed", "", err
+	}
 	if endpoint == "" {
 		return "failed", "", fmt.Errorf("set connector endpoint to the Zyvor Fleet URL")
 	}
 	client := fleet.New(endpoint, token)
+	client.HTTP = d.policy().HTTPClient(20*time.Second, false)
 	switch action {
 	case "lifecycle.request", "desired.progress", "sync":
 		body, err := client.DesiredProgress(ctx)
@@ -149,7 +147,10 @@ func (d *Dispatcher) fleet(ctx context.Context, orgID string, conn *model.Connec
 }
 
 func (d *Dispatcher) ota(ctx context.Context, orgID string, conn *model.Connector, action, payload string) (string, string, error) {
-	endpoint, token := endpointAndToken(conn, payload)
+	endpoint, token, err := d.endpointAndToken(ctx, conn, payload)
+	if err != nil {
+		return "failed", "", err
+	}
 	if endpoint == "" {
 		return "failed", "", fmt.Errorf("set connector endpoint to Fleet or Nodra URL")
 	}
@@ -166,6 +167,7 @@ func (d *Dispatcher) ota(ctx context.Context, orgID string, conn *model.Connecto
 		}
 	}
 	client := ota.New(endpoint, token, source)
+	client.HTTP = d.policy().HTTPClient(20*time.Second, false)
 	switch action {
 	case "campaign.list", "update.delegate", "sync":
 		res, err := client.List(ctx)
@@ -181,24 +183,79 @@ func (d *Dispatcher) ota(ctx context.Context, orgID string, conn *model.Connecto
 	}
 }
 
-func endpointAndToken(conn *model.Connector, payload string) (endpoint, token string) {
+func (d *Dispatcher) endpointAndToken(ctx context.Context, conn *model.Connector, payload string) (endpoint, token string, err error) {
 	endpoint = strings.TrimRight(conn.Endpoint, "/")
-	token = configString(conn.Config, "auth_token")
-	if token == "" {
-		token = configString(conn.Config, "token")
+	if d.Secret != nil {
+		token, _ = d.Secret(ctx, conn)
 	}
-	if payload != "" && payload != "{}" {
-		var p map[string]any
-		if json.Unmarshal([]byte(payload), &p) == nil {
-			if u, ok := p["endpoint"].(string); ok && u != "" {
-				endpoint = strings.TrimRight(u, "/")
-			}
-			if t, ok := p["auth_token"].(string); ok && t != "" {
-				token = t
-			}
+	if token == "" {
+		token = configString(conn.Config, "auth_token")
+		if token == "" {
+			token = configString(conn.Config, "token")
 		}
 	}
-	return endpoint, token
+	mode := d.Mode
+	if mode == "" {
+		mode = "demo"
+	}
+	if override := payloadEndpoint(payload); override != "" && mode != "production" {
+		if err := d.policy().Validate(override); err != nil {
+			return "", "", err
+		}
+		endpoint = strings.TrimRight(override, "/")
+	}
+	if endpoint == "" && conn.Kind == "device-agent" && mode != "production" {
+		endpoint = "http://127.0.0.1:9188"
+	}
+	if strings.Contains(endpoint, "://") && !strings.HasPrefix(endpoint, "internal://") {
+		if err := d.policy().Validate(endpoint); err != nil {
+			return "", "", err
+		}
+	}
+	return endpoint, token, nil
+}
+
+func (d *Dispatcher) policy() *egress.Policy {
+	if d.Policy != nil {
+		return d.Policy
+	}
+	return egress.Demo()
+}
+
+func (d *Dispatcher) allowSkipTLS() bool {
+	if d.AllowInsecureTLS {
+		return true
+	}
+	return d.Mode == "" || d.Mode == "demo"
+}
+
+func (d *Dispatcher) tlsRequested(raw string) bool {
+	if configString(raw, "tls_insecure") == "true" || configString(raw, "tls_insecure") == "1" {
+		return true
+	}
+	var m map[string]any
+	if json.Unmarshal([]byte(raw), &m) != nil {
+		return false
+	}
+	b, ok := m["tls_insecure"].(bool)
+	return ok && b
+}
+
+func payloadEndpoint(payload string) string {
+	if payload == "" || payload == "{}" {
+		return ""
+	}
+	var p map[string]any
+	if json.Unmarshal([]byte(payload), &p) != nil {
+		return ""
+	}
+	if u, ok := p["endpoint"].(string); ok && u != "" {
+		return u
+	}
+	if u, ok := p["agent_url"].(string); ok && u != "" {
+		return u
+	}
+	return ""
 }
 
 func configString(raw, key string) string {

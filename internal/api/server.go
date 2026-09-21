@@ -18,51 +18,89 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zyvorai/yard/internal/config"
 	"github.com/zyvorai/yard/internal/connectors"
 	"github.com/zyvorai/yard/internal/idgen"
 	"github.com/zyvorai/yard/internal/jobs"
+	"github.com/zyvorai/yard/internal/mail"
 	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/queue"
+	"github.com/zyvorai/yard/internal/secrets"
 	"github.com/zyvorai/yard/internal/sse"
 	"github.com/zyvorai/yard/internal/store"
+	"github.com/zyvorai/yard/internal/version"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type Server struct {
-	Store    *store.Store
-	Engine   *jobs.Engine
-	Hub      *sse.Hub
-	Static   fs.FS
-	Log      *slog.Logger
-	Dispatch *connectors.Dispatcher
-	tokens   map[string]string
-	limiter  *ingestLimiter
-	metrics  *metrics
+	Store        *store.Store
+	Engine       *jobs.Engine
+	Hub          *sse.Hub
+	Static       fs.FS
+	Log          *slog.Logger
+	Dispatch     *connectors.Dispatcher
+	Queue        *queue.Worker
+	Runtime      config.Config
+	tokens       map[string]string
+	limiter      *ingestLimiter
+	loginLimiter *ingestLimiter
+	metrics      *metrics
 }
 
 func New(st *store.Store, logger *slog.Logger) *Server {
+	return NewWith(st, logger, config.DemoConfig())
+}
+
+func NewWith(st *store.Store, logger *slog.Logger, cfg config.Config) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	hub := sse.New()
-	eng := &jobs.Engine{Store: st, Hub: hub, Log: logger}
-	return &Server{
-		Store:    st,
-		Engine:   eng,
-		Hub:      hub,
-		Log:      logger,
-		Dispatch: connectors.NewDispatcher(st),
-		tokens:   map[string]string{},
-		limiter:  newIngestLimiter(120, time.Minute),
-		metrics:  &metrics{},
+	if cfg.Mode == "" {
+		cfg = config.DemoConfig()
 	}
+	if cfg.Egress == nil {
+		cfg.Egress = config.DemoConfig().Egress
+	}
+	if len(cfg.SecretKey) != 32 {
+		key, err := secrets.RandomKey()
+		if err != nil {
+			key = make([]byte, 32)
+		}
+		cfg.SecretKey = key
+	}
+	hub := sse.New()
+	eng := &jobs.Engine{Store: st, Hub: hub, Log: logger, Policy: cfg.Egress, HTTP: cfg.Egress.HTTPClient(8*time.Second, false)}
+	d := connectors.NewDispatcher(st)
+	d.Mode = cfg.Mode
+	d.AllowInsecureTLS = cfg.AllowInsecureTLS
+	d.Policy = cfg.Egress
+	s := &Server{
+		Store:        st,
+		Engine:       eng,
+		Hub:          hub,
+		Log:          logger,
+		Dispatch:     d,
+		Runtime:      cfg,
+		tokens:       map[string]string{},
+		limiter:      newIngestLimiter(120, time.Minute),
+		loginLimiter: newIngestLimiter(10, 15*time.Minute),
+		metrics:      &metrics{version: version.Version},
+	}
+	d.Secret = s.connectorSecret
+	s.Queue = &queue.Worker{Store: st, Dispatch: d, Log: logger}
+	return s
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ready")) })
-	mux.HandleFunc("/metrics", s.metrics.handler)
+	mux.HandleFunc("/readyz", s.readyz)
+	mux.HandleFunc("/metrics", s.metricsHandler)
+	mux.HandleFunc("/api/v1/meta", s.meta)
 	mux.HandleFunc("/api/v1/auth/login", s.login)
+	mux.HandleFunc("/api/v1/auth/logout", s.withUser(s.logout))
+	mux.HandleFunc("/api/v1/auth/sessions", s.withUser(s.sessions))
+	mux.HandleFunc("/api/v1/auth/sessions/", s.withUser(s.sessionItem))
 	mux.HandleFunc("/api/v1/auth/oidc", s.oidcConfig)
 	mux.HandleFunc("/api/v1/auth/me", s.withUser(s.me))
 	mux.HandleFunc("/api/v1/auth/accept-invite", s.acceptInvite)
@@ -82,12 +120,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/work-orders", s.withUser(s.workOrders))
 	mux.HandleFunc("/api/v1/work-orders/", s.withUser(s.workOrderItem))
 	mux.HandleFunc("/api/v1/connectors", s.withUser(s.connectors))
+	mux.HandleFunc("/api/v1/connectors/", s.withUser(s.putConnectorSecret))
 	mux.HandleFunc("/api/v1/actions", s.withUser(s.actions))
 	mux.HandleFunc("/api/v1/automations", s.withUser(s.automations))
 	mux.HandleFunc("/api/v1/severity-policies", s.withUser(s.severityPolicies))
 	mux.HandleFunc("/api/v1/severity-policies/", s.withUser(s.severityPolicyItem))
 	mux.HandleFunc("/api/v1/audit", s.withUser(s.audit))
-	mux.HandleFunc("/api/v1/stream", s.withUser(s.stream))
+	mux.HandleFunc("/api/v1/stream/ticket", s.withUser(s.streamTicket))
+	mux.HandleFunc("/api/v1/stream", s.stream)
+	mux.HandleFunc("/api/v1/locations", s.withUser(s.locations))
 	mux.HandleFunc("/api/v1/onboarding", s.withUser(s.onboarding))
 	mux.HandleFunc("/api/v1/geocode", s.withUser(s.geocode))
 	mux.HandleFunc("/api/v1/ingest/observations", s.rateIngest(s.withConnector(s.ingestObs)))
@@ -96,7 +137,7 @@ func (s *Server) Handler() http.Handler {
 	if s.Static != nil {
 		mux.Handle("/", s.spa())
 	}
-	return s.requestLog(cors(mux))
+	return s.requestLog(s.secure(mux))
 }
 
 type statusRecorder struct {
@@ -149,19 +190,6 @@ func (s *Server) rateIngest(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func cors(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Yard-Token")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(204)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -169,7 +197,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func readJSON(r *http.Request, v any) error {
+	return readJSONLimit(r, v, 1<<20)
+}
+
+func readJSONLimit(r *http.Request, v any, n int64) error {
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(nil, r.Body, n)
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
@@ -276,9 +309,19 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "invalid json"})
 		return
 	}
+	key := clientIP(r) + "|" + strings.ToLower(strings.TrimSpace(in.Email))
+	if s.loginLimiter != nil && s.loginLimiter.over(key) {
+		s.metrics.inc(&s.metrics.loginLockout)
+		w.Header().Set("Retry-After", "900")
+		writeJSON(w, 429, map[string]string{"error": "too many login attempts"})
+		return
+	}
 	u, err := s.Store.UserByEmail(r.Context(), in.Email)
 	if err != nil || !u.Active || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.Password)) != nil {
 		s.metrics.inc(&s.metrics.loginFail)
+		if s.loginLimiter != nil {
+			s.loginLimiter.allow(key)
+		}
 		writeJSON(w, 401, map[string]string{"error": "invalid credentials"})
 		return
 	}
@@ -319,6 +362,10 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request, u *model.Use
 			writeJSON(w, 400, map[string]string{"error": "email required"})
 			return
 		}
+		if s.Runtime.Mode == "production" && !mail.Configured() {
+			writeJSON(w, 503, map[string]string{"error": "email delivery is not configured"})
+			return
+		}
 		if in.Role == "" {
 			in.Role = "viewer"
 		}
@@ -342,8 +389,15 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request, u *model.Use
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
-		if s.Log != nil {
+		if s.Log != nil && !mail.Configured() && s.Runtime.Mode != "production" {
 			s.Log.Info("user invited", "email", nu.Email, "invite_token", token)
+		}
+		if mail.Configured() {
+			link := strings.TrimRight(s.Runtime.PublicURL, "/") + "/accept-invite?token=" + token
+			if err := mail.Send(nu.Email, "Yard invitation", "Accept your Yard invitation:\n\n"+link+"\n"); err != nil {
+				writeJSON(w, 502, map[string]string{"error": "email delivery failed"})
+				return
+			}
 		}
 		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "user.invite", nu.ID, nu.Email)
 		writeJSON(w, 201, map[string]any{"user": nu, "invite_token": token})
@@ -438,14 +492,25 @@ func (s *Server) requestReset(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "invalid json"})
 		return
 	}
+	if s.Runtime.Mode == "production" && !mail.Configured() {
+		writeJSON(w, 503, map[string]string{"error": "email delivery is not configured"})
+		return
+	}
 	if u, err := s.Store.UserByEmail(r.Context(), in.Email); err == nil && u.Active {
-		if token, err := s.Store.CreatePasswordResetToken(r.Context(), u.ID, time.Hour); err == nil && s.Log != nil {
-			scheme := "http"
-			if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-				scheme = "https"
+		if token, err := s.Store.CreatePasswordResetToken(r.Context(), u.ID, time.Hour); err == nil {
+			link := strings.TrimRight(s.Runtime.PublicURL, "/") + "/reset-password?token=" + token
+			if s.Runtime.PublicURL == "" {
+				scheme := "http"
+				if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+					scheme = "https"
+				}
+				link = fmt.Sprintf("%s://%s/reset-password?token=%s", scheme, r.Host, token)
 			}
-			link := fmt.Sprintf("%s://%s/reset-password?token=%s", scheme, r.Host, token)
-			s.Log.Info("password reset requested", "email", u.Email, "reset_link", link)
+			if mail.Configured() {
+				_ = mail.Send(u.Email, "Yard password reset", "Reset your Yard password:\n\n"+link+"\n")
+			} else if s.Log != nil && s.Runtime.Mode != "production" {
+				s.Log.Info("password reset requested", "email", u.Email, "reset_link", link)
+			}
 		}
 	}
 	writeJSON(w, 200, map[string]string{"status": "ok"})
@@ -478,6 +543,7 @@ func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
+	_ = s.Store.DeleteUserSessions(r.Context(), userID)
 	writeJSON(w, 200, map[string]string{"status": "ok"})
 }
 
@@ -543,11 +609,13 @@ func (s *Server) apiKeys(w http.ResponseWriter, r *http.Request, u *model.User) 
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request, u *model.User) {
-	_ = s.Engine.MarkStale(r.Context(), u.OrganizationID)
 	ov, err := s.Store.Overview(r.Context(), u.OrganizationID)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
+	}
+	if !roleOK(u, true) {
+		ov.RecentActivity = []model.AuditEntry{}
 	}
 	writeJSON(w, 200, ov)
 }
@@ -1209,6 +1277,9 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request, u *model.User
 		}
 		writeJSON(w, 200, list)
 	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
 		var inc model.Incident
 		if err := readJSON(r, &inc); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "invalid json"})
@@ -1249,7 +1320,10 @@ func (s *Server) incidentItem(w http.ResponseWriter, r *http.Request, u *model.U
 		writeJSON(w, 200, inc)
 		return
 	}
-	if r.Method == http.MethodPatch || strings.HasSuffix(r.URL.Path, "/resolve") {
+	if r.Method == http.MethodPatch {
+		if !s.requireWrite(w, u) {
+			return
+		}
 		var in map[string]string
 		_ = readJSON(r, &in)
 		if v := in["status"]; v != "" {
@@ -1394,8 +1468,14 @@ func (s *Server) connectors(w http.ResponseWriter, r *http.Request, u *model.Use
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
 		}
+		for i := range list {
+			s.presentConnector(r.Context(), &list[i])
+		}
 		writeJSON(w, 200, list)
 	case http.MethodPatch:
+		if !s.requireWrite(w, u) {
+			return
+		}
 		var in struct {
 			ID          string  `json:"id"`
 			Name        *string `json:"name"`
@@ -1423,7 +1503,21 @@ func (s *Server) connectors(w http.ResponseWriter, r *http.Request, u *model.Use
 			c.Status = *in.Status
 		}
 		if in.Config != nil {
+			if configHasSecretField(*in.Config) {
+				writeJSON(w, 400, map[string]string{"error": "set connector secrets with PUT /api/v1/connectors/{id}/secret"})
+				return
+			}
+			if tlsInsecureRequested(*in.Config) && s.Runtime.Mode == "production" && !s.Runtime.AllowInsecureTLS {
+				writeJSON(w, 400, map[string]string{"error": "insecure TLS is not allowed in production"})
+				return
+			}
 			c.Config = *in.Config
+		}
+		if in.Endpoint != nil {
+			if err := s.Runtime.Egress.ValidateOptional(*in.Endpoint); err != nil {
+				writeJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
 		}
 		if err := s.Store.UpdateConnector(r.Context(), u.OrganizationID, c); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1447,6 +1541,8 @@ func (s *Server) connectors(w http.ResponseWriter, r *http.Request, u *model.Use
 			out["token"] = tok
 		}
 		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "connector.update", c.ID, c.Name)
+		s.presentConnector(r.Context(), c)
+		out["connector"] = c
 		writeJSON(w, 200, out)
 	default:
 		writeJSON(w, 405, map[string]string{"error": "method"})
@@ -1463,6 +1559,9 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 		}
 		writeJSON(w, 200, list)
 	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
 		var in struct {
 			AssetID        string `json:"asset_id"`
 			ConnectorID    string `json:"connector_id"`
@@ -1487,6 +1586,7 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 		if in.Payload == "" {
 			in.Payload = "{}"
 		}
+		in.Payload = stripActionSecrets(in.Payload)
 		var assetID *string
 		if in.AssetID != "" {
 			assetID = &in.AssetID
@@ -1508,7 +1608,7 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 			ConnectorID:    connID,
 			Action:         in.Action,
 			IdempotencyKey: in.IdempotencyKey,
-			Status:         "accepted",
+			Status:         "queued",
 			Payload:        in.Payload,
 			ExpiresAt:      time.Now().UTC().Add(15 * time.Minute),
 		}
@@ -1516,24 +1616,28 @@ func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) 
 			writeJSON(w, 409, map[string]string{"error": err.Error()})
 			return
 		}
-		status, result := "recorded", "No connector selected; outcome recorded locally."
-		if conn != nil && s.Dispatch != nil {
-			st, res, err := s.Dispatch.Execute(r.Context(), u.OrganizationID, conn, in.Action, in.Payload)
-			status = st
-			result = res
-			if err != nil && result == "" {
-				result = err.Error()
+		if conn == nil {
+			_ = s.Store.CompleteAction(r.Context(), act.ID, "recorded", "No connector selected; outcome recorded locally.")
+			act.Status = "recorded"
+			act.Result = "No connector selected; outcome recorded locally."
+		} else if s.Queue != nil {
+			if _, err := queue.EnqueueRemoteAction(r.Context(), s.Store, u.OrganizationID, act.ID, conn.ID, in.Action, in.Payload); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
 			}
+			act.Status = "queued"
+			act.Result = "queued for worker"
+		} else if s.Dispatch != nil {
+			st, res, err := s.Dispatch.Execute(r.Context(), u.OrganizationID, conn, in.Action, in.Payload)
+			if err != nil && res == "" {
+				res = err.Error()
+			}
+			_ = s.Store.CompleteAction(r.Context(), act.ID, st, res)
+			act.Status = st
+			act.Result = res
 		}
-		_ = s.Store.CompleteAction(r.Context(), act.ID, status, result)
-		act.Status = status
-		act.Result = result
 		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "action.request", act.ID, act.Action)
-		code := 202
-		if status == "failed" {
-			code = 502
-		}
-		writeJSON(w, code, act)
+		writeJSON(w, 202, act)
 	default:
 		writeJSON(w, 405, map[string]string{"error": "method"})
 	}
@@ -1662,6 +1766,13 @@ func (s *Server) automations(w http.ResponseWriter, r *http.Request, u *model.Us
 }
 
 func (s *Server) audit(w http.ResponseWriter, r *http.Request, u *model.User) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	if !s.requireWrite(w, u) {
+		return
+	}
 	list, err := s.Store.ListAudit(r.Context(), u.OrganizationID, 200)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -1670,7 +1781,27 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request, u *model.User) {
 	writeJSON(w, 200, list)
 }
 
-func (s *Server) stream(w http.ResponseWriter, r *http.Request, u *model.User) {
+func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("token") != "" {
+		writeJSON(w, 401, map[string]string{"error": "stream requires a single-use ticket"})
+		return
+	}
+	ticket := r.URL.Query().Get("ticket")
+	if ticket == "" {
+		writeJSON(w, 401, map[string]string{"error": "ticket required"})
+		return
+	}
+	sum := sha256.Sum256([]byte(ticket))
+	userID, _, err := s.Store.ConsumeStreamTicket(r.Context(), hex.EncodeToString(sum[:]))
+	if err != nil {
+		writeJSON(w, 401, map[string]string{"error": "invalid or expired ticket"})
+		return
+	}
+	u, err := s.Store.UserByID(r.Context(), userID)
+	if err != nil || !u.Active {
+		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		return
+	}
 	fl, ok := w.(http.Flusher)
 	if !ok {
 		writeJSON(w, 500, map[string]string{"error": "stream unsupported"})
@@ -1701,6 +1832,36 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request, u *model.User) {
 			_, _ = w.Write([]byte("\n\n"))
 			fl.Flush()
 		}
+	}
+}
+
+func (s *Server) locations(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListLocations(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in store.Location
+		if err := readJSON(r, &in); err != nil || in.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "name required"})
+			return
+		}
+		in.OrganizationID = u.OrganizationID
+		if err := s.Store.CreateLocation(r.Context(), &in); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "location.create", in.ID, in.Name)
+		writeJSON(w, 201, in)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
 	}
 }
 

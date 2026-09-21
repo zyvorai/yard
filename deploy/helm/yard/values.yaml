@@ -7,6 +7,12 @@ replicaCount: 1
 
 listen: ":8080"
 databaseUrl: "file:/var/lib/yard/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+mode: "demo"
+publicUrl: ""
+secretKey: ""
+corsOrigins: ""
+egressAllowlist: ""
+allowInsecureTLS: "0"
 
 service:
   type: ClusterIP

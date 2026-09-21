@@ -25,11 +25,26 @@ Default lab listen port is **18080** (8080 is often occupied). Override
 with `--port` or reuse `.deploy-last`.
 :::
 
-Demo login after bootstrap:
+Demo login after bootstrap (demo mode only):
 
 ```
 admin@yard.local / yard-admin
 ```
+
+## Production mode
+
+Set `YARD_MODE=production` together with:
+
+| Variable | Purpose |
+| --- | --- |
+| `YARD_PUBLIC_URL` | Absolute public base URL (required) |
+| `YARD_SECRET_KEY` | 32-byte master key for connector secrets |
+| `YARD_BOOTSTRAP_EMAIL` / `YARD_BOOTSTRAP_PASSWORD` | First admin on an empty database |
+| `YARD_CORS_ORIGINS` | Comma-separated browser origins |
+| `YARD_EGRESS_ALLOWLIST` | Hosts allowed for private-network connector calls |
+| `YARD_SMTP_*` | Required for invite and password-reset delivery |
+
+Production never seeds sample assets and refuses the public demo password.
 
 ## What gets installed
 
@@ -74,8 +89,9 @@ helm upgrade --install yard ./deploy/helm/yard \
 | Value | Purpose |
 | --- | --- |
 | `listen` / `databaseUrl` | Process bind address and SQLite/Postgres DSN |
+| `mode` / `publicUrl` / `secretKey` / `corsOrigins` | Runtime mode and production hardening |
 | `persistence.*` | PVC for SQLite when not using an external DB |
-| `oidc.enabled` + `oidc.issuer` / `clientId` / `clientSecret` | Sets `YARD_OIDC_*` for `GET /api/v1/auth/oidc` discovery (browser callback is a follow-up) |
+| `oidc.enabled` + `oidc.issuer` / `clientId` / `clientSecret` | Sets `YARD_OIDC_*` for `GET /api/v1/auth/oidc` discovery (browser callback is still Partial) |
 
 For remote hosts, prefer `make deploy-remote H=<host> U=sus`
 (`./scripts/deploy-remote.sh USER@HOST`, or `./scripts/ship`). Set `YARD_URL` to a loopback URL inside the process

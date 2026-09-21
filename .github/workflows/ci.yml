@@ -113,6 +113,22 @@ jobs:
       - run: npm --prefix website ci
       - run: npm --prefix website run build
 
+  platform-roadmap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Roadmap phase contracts
+        run: go test ./internal/platform/ -count=1 -v
+      - name: Docs mention production mode
+        run: |
+          grep -q 'YARD_MODE' SECURITY.md
+          grep -q 'Partial' docs/ROADMAP.md
+          grep -q 'Telemetry Data Platform' docs/PHASES.md
+
   helm:
     runs-on: ubuntu-latest
     steps:

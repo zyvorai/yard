@@ -36,9 +36,11 @@ type APIKey struct {
 }
 
 type Session struct {
-	Token     string    `json:"token"`
+	ID        string    `json:"id"`
+	Token     string    `json:"-"`
 	UserID    string    `json:"user_id"`
 	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Site struct {
@@ -172,6 +174,8 @@ type Connector struct {
 	TokenHash      string     `json:"-"`
 	Actions        string     `json:"actions"`
 	Config         string     `json:"config"`
+	HasSecret      bool       `json:"has_secret"`
+	SecretHint     string     `json:"secret_hint,omitempty"`
 	LastSyncAt     *time.Time `json:"last_sync_at,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 }

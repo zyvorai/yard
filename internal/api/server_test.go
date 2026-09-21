@@ -352,8 +352,20 @@ func TestStreamSupportsFlushThroughMiddleware(t *testing.T) {
 	var login struct{ Token string }
 	_ = json.NewDecoder(resp.Body).Decode(&login)
 
-	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/stream", nil)
-	req.Header.Set("Authorization", "Bearer "+login.Token)
+	treq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/stream/ticket", nil)
+	treq.Header.Set("Authorization", "Bearer "+login.Token)
+	tresp, err := http.DefaultClient.Do(treq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tresp.Body.Close()
+	var ticket struct{ Ticket string }
+	_ = json.NewDecoder(tresp.Body).Decode(&ticket)
+	if ticket.Ticket == "" {
+		t.Fatal("missing stream ticket")
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/stream?ticket="+ticket.Ticket, nil)
 	sresp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

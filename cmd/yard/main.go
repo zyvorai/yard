@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/zyvorai/yard/internal/api"
+	"github.com/zyvorai/yard/internal/config"
 	"github.com/zyvorai/yard/internal/seed"
 	"github.com/zyvorai/yard/internal/store"
 )
@@ -37,6 +38,11 @@ func main() {
 	if dir := filepath.Dir(fileFromDSN(dsn)); dir != "" && dir != "." && dir != "/" {
 		_ = os.MkdirAll(dir, 0o755)
 	}
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("config", "err", err)
+		os.Exit(1)
+	}
 	st, err := store.Open(dsn)
 	if err != nil {
 		logger.Error("store", "err", err)
@@ -44,20 +50,25 @@ func main() {
 	}
 	defer st.Close()
 
-	res, err := seed.Bootstrap(context.Background(), st)
+	res, err := seed.BootstrapWith(context.Background(), st, seed.Options{
+		Mode:              cfg.Mode,
+		BootstrapEmail:    os.Getenv("YARD_BOOTSTRAP_EMAIL"),
+		BootstrapPassword: os.Getenv("YARD_BOOTSTRAP_PASSWORD"),
+		PublicURL:         cfg.PublicURL,
+	})
 	if err != nil {
 		logger.Error("bootstrap", "err", err)
 		os.Exit(1)
 	}
+	logger.Info("bootstrap", "status", seed.FormatWelcome(res))
 	if res != nil && res.IngestToken != "" {
-		logger.Info("bootstrap", "welcome", seed.FormatWelcome(res))
-		dataDir := env("YARD_DATA_DIR", "data")
+		dataDir := cfg.DataDir
 		_ = os.MkdirAll(dataDir, 0o755)
 		_ = os.WriteFile(filepath.Join(dataDir, "ingest.token"), []byte(res.IngestToken+"\n"), 0o600)
 		_ = os.WriteFile(filepath.Join(dataDir, "simulator.token"), []byte(res.SimulatorTok+"\n"), 0o600)
 	}
 
-	srv := api.New(st, logger)
+	srv := api.NewWith(st, logger, cfg)
 	if sub, err := fs.Sub(staticRoot, "static"); err == nil {
 		if _, err := sub.Open("index.html"); err == nil {
 			srv.Static = sub
@@ -68,8 +79,18 @@ func main() {
 	defer runCancel()
 	srv.Engine.StartStaleTicker(runCtx, 30*time.Second)
 	srv.Engine.StartActionSweeper(runCtx, 60*time.Second)
+	if srv.Queue != nil {
+		srv.Queue.Start(runCtx, 2*time.Second)
+	}
 
-	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	httpSrv := &http.Server{
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
 	go func() {
 		logger.Info("yard listening", "addr", addr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

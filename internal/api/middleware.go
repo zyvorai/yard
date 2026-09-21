@@ -52,6 +52,22 @@ func newIngestLimiter(limit int, window time.Duration) *ingestLimiter {
 	return &ingestLimiter{hits: map[string][]time.Time{}, limit: limit, window: window}
 }
 
+func (l *ingestLimiter) over(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	cut := now.Add(-l.window)
+	arr := l.hits[key]
+	kept := arr[:0]
+	for _, t := range arr {
+		if t.After(cut) {
+			kept = append(kept, t)
+		}
+	}
+	l.hits[key] = kept
+	return len(kept) >= l.limit
+}
+
 func (l *ingestLimiter) allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -73,12 +89,15 @@ func (l *ingestLimiter) allow(key string) bool {
 }
 
 type metrics struct {
-	mu           sync.Mutex
-	ingestOK     int64
-	ingestReject int64
-	loginOK      int64
-	loginFail    int64
-	staleRuns    int64
+	mu            sync.Mutex
+	ingestOK      int64
+	ingestReject  int64
+	loginOK       int64
+	loginFail     int64
+	loginLockout  int64
+	secretRotate  int64
+	staleRuns     int64
+	version       string
 }
 
 func (m *metrics) inc(field *int64) {
@@ -87,12 +106,19 @@ func (m *metrics) inc(field *int64) {
 	m.mu.Unlock()
 }
 
-func (m *metrics) handler(w http.ResponseWriter, _ *http.Request) {
+func (m *metrics) handler(w http.ResponseWriter, egressDenials int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	ver := m.version
+	if ver == "" {
+		ver = "dev"
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	_, _ = w.Write([]byte(
-		"# HELP yard_ingest_ok_total Accepted ingest requests\n" +
+		"# HELP yard_build_info Build information\n" +
+			"# TYPE yard_build_info gauge\n" +
+			"yard_build_info{version=\"" + ver + "\"} 1\n" +
+			"# HELP yard_ingest_ok_total Accepted ingest requests\n" +
 			"# TYPE yard_ingest_ok_total counter\n" +
 			"yard_ingest_ok_total " + itoa(m.ingestOK) + "\n" +
 			"# HELP yard_ingest_reject_total Rejected ingest requests\n" +
@@ -103,7 +129,16 @@ func (m *metrics) handler(w http.ResponseWriter, _ *http.Request) {
 			"yard_login_ok_total " + itoa(m.loginOK) + "\n" +
 			"# HELP yard_login_fail_total Failed logins\n" +
 			"# TYPE yard_login_fail_total counter\n" +
-			"yard_login_fail_total " + itoa(m.loginFail) + "\n",
+			"yard_login_fail_total " + itoa(m.loginFail) + "\n" +
+			"# HELP yard_login_lockout_total Login attempts rejected by the failure limiter\n" +
+			"# TYPE yard_login_lockout_total counter\n" +
+			"yard_login_lockout_total " + itoa(m.loginLockout) + "\n" +
+			"# HELP yard_secret_rotations_total Connector secret rotations\n" +
+			"# TYPE yard_secret_rotations_total counter\n" +
+			"yard_secret_rotations_total " + itoa(m.secretRotate) + "\n" +
+			"# HELP yard_egress_denied_total Outbound requests refused by the egress policy\n" +
+			"# TYPE yard_egress_denied_total counter\n" +
+			"yard_egress_denied_total " + itoa(egressDenials) + "\n",
 	))
 }
 

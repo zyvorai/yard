@@ -116,7 +116,7 @@ flowchart TD
 | Parts used + time tracking | Later |
 | Mobile field tech mode (PWA) | Later |
 | Multi-asset work orders | Later |
-| Calendar / preventive maintenance schedules | Have (`schedule_cron` on work orders; calendar UI later) |
+| Calendar / preventive maintenance schedules | Partial (`schedule_cron` stored; location hierarchy API started; PM scheduler later) |
 
 ## 5. Automations and actions
 
@@ -128,7 +128,7 @@ flowchart TD
 | Notify-on-event automation | Have (notify + audit) |
 | Automation rule editor | Have (create / enable / delete) |
 | Webhook / email / Slack / PagerDuty actions | Have (email/Slack/PagerDuty implemented, unverified — no test account) |
-| Remote actions with idempotency + expiry | Have (API + UI history + sweeper) |
+| Remote actions with idempotency + expiry | Partial (durable job queue + worker; approvals later) |
 | Device Agent `inventory.refresh` / `diagnostics.read` | Have |
 | Two-person action approval | Later |
 | Multi-step playbooks | Later |
@@ -177,10 +177,10 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Roles / RBAC (viewer, operator, admin) | Have (write gate + invite UX) |
 | Invite users / password reset | Have |
 | API keys for humans vs connectors | Have |
-| SSO (OIDC/SAML) | Have (OIDC discovery via `GET /api/v1/auth/oidc` + Helm env; full callback later) |
+| SSO (OIDC/SAML) | Partial (OIDC discovery via `GET /api/v1/auth/oidc`; browser callback not implemented) |
 | Multi-tenant product UX | Later |
 | Soft-delete + retention | Later |
-| Secrets vault for connector credentials | Later |
+| Secrets vault for connector credentials | Have (encrypted connector secrets + redacted API) |
 | Compliance exports | Later |
 
 ## 9. UX / product surfaces

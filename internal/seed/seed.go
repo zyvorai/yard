@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/zyvorai/yard/internal/idgen"
 	"github.com/zyvorai/yard/internal/model"
@@ -28,6 +29,120 @@ func HashToken(tok string) string {
 }
 
 func Bootstrap(ctx context.Context, st *store.Store) (*Result, error) {
+	return BootstrapWith(ctx, st, Options{Mode: "demo"})
+}
+
+// Options selects demo seed data or a production first-admin bootstrap.
+type Options struct {
+	Mode               string
+	BootstrapEmail     string
+	BootstrapPassword  string
+	PublicURL          string
+}
+
+func BootstrapWith(ctx context.Context, st *store.Store, opt Options) (*Result, error) {
+	if opt.Mode == "" {
+		opt.Mode = "demo"
+	}
+	if opt.Mode != "demo" && opt.Mode != "production" {
+		return nil, fmt.Errorf("YARD_MODE must be demo or production")
+	}
+	if err := refuseDemoPassword(ctx, st, opt.Mode); err != nil {
+		return nil, err
+	}
+	n, err := st.CountOrgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if n > 0 {
+		if opt.Mode == "production" {
+			return &Result{}, nil
+		}
+		u, err := st.UserByEmail(ctx, DemoEmail)
+		if err != nil {
+			return nil, err
+		}
+		_ = EnsureSeverityPolicies(ctx, st, u.OrganizationID)
+		return &Result{User: u}, nil
+	}
+	if opt.Mode == "production" {
+		return bootstrapProduction(ctx, st, opt)
+	}
+	return bootstrapDemo(ctx, st)
+}
+
+func refuseDemoPassword(ctx context.Context, st *store.Store, mode string) error {
+	if mode != "production" {
+		return nil
+	}
+	u, err := st.UserByEmail(ctx, DemoEmail)
+	if err != nil {
+		return nil
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(DemoPassword)) == nil {
+		return fmt.Errorf("production mode refuses the public demo password for %s", DemoEmail)
+	}
+	return nil
+}
+
+func bootstrapProduction(ctx context.Context, st *store.Store, opt Options) (*Result, error) {
+	email := strings.TrimSpace(opt.BootstrapEmail)
+	pass := opt.BootstrapPassword
+	if email == "" || pass == "" || strings.TrimSpace(opt.PublicURL) == "" {
+		return nil, fmt.Errorf("production bootstrap requires YARD_BOOTSTRAP_EMAIL, YARD_BOOTSTRAP_PASSWORD, and YARD_PUBLIC_URL")
+	}
+	if strings.EqualFold(email, DemoEmail) || pass == DemoPassword {
+		return nil, fmt.Errorf("production bootstrap cannot use the public demo credentials")
+	}
+	if len(pass) < 8 {
+		return nil, fmt.Errorf("production bootstrap password must be at least 8 characters")
+	}
+	slug := slugFromEmail(email)
+	org, err := st.CreateOrganization(ctx, "Operations", slug)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pass), 10)
+	if err != nil {
+		return nil, err
+	}
+	user := &model.User{
+		OrganizationID: org.ID,
+		Email:          email,
+		DisplayName:    "Administrator",
+		Role:           "admin",
+		Active:         true,
+		PasswordHash:   string(hash),
+	}
+	if err := st.CreateUser(ctx, user); err != nil {
+		return nil, err
+	}
+	if err := EnsureSeverityPolicies(ctx, st, org.ID); err != nil {
+		return nil, err
+	}
+	_ = st.Audit(ctx, org.ID, user.Email, "workspace.create", org.ID, "Production workspace created without sample data")
+	return &Result{Organization: org, User: user}, nil
+}
+
+func slugFromEmail(email string) string {
+	local := email
+	if i := strings.IndexByte(email, '@'); i > 0 {
+		local = email[:i]
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(local) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	s := b.String()
+	if s == "" {
+		return "workspace"
+	}
+	return s
+}
+
+func bootstrapDemo(ctx context.Context, st *store.Store) (*Result, error) {
 	n, err := st.CountOrgs(ctx)
 	if err != nil {
 		return nil, err
@@ -247,8 +362,11 @@ func EnsureSeverityPolicies(ctx context.Context, st *store.Store, orgID string) 
 func f64(v float64) *float64 { return &v }
 
 func FormatWelcome(r *Result) string {
-	if r.IngestToken == "" {
+	if r == nil || r.Organization == nil {
 		return "workspace already exists"
 	}
-	return fmt.Sprintf("workspace=%s ingest=%s simulator=%s login=%s / %s", r.Organization.Slug, r.IngestToken, r.SimulatorTok, DemoEmail, DemoPassword)
+	if r.IngestToken == "" {
+		return fmt.Sprintf("workspace=%s bootstrap complete", r.Organization.Slug)
+	}
+	return fmt.Sprintf("workspace=%s bootstrap complete; connector tokens were written under the data directory", r.Organization.Slug)
 }

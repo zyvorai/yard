@@ -51,13 +51,9 @@ export default function Integrations() {
     setBusy(c.id + "tok");
     setMsg("");
     try {
-      let cfg: Record<string, unknown> = {};
-      try { cfg = JSON.parse(c.config || "{}"); } catch { /* ignore */ }
-      if (token) cfg.auth_token = token;
-      else delete cfg.auth_token;
-      await api(`/api/v1/connectors`, {
-        method: "PATCH",
-        body: JSON.stringify({ id: c.id, config: JSON.stringify(cfg) }),
+      await api(`/api/v1/connectors/${c.id}/secret`, {
+        method: "PUT",
+        body: JSON.stringify({ secret: token }),
       });
       setMsg(`Auth token saved for ${c.name}`);
       await load();
@@ -114,7 +110,7 @@ export default function Integrations() {
               {(c.kind === "nodra" || c.kind === "fleet" || c.kind === "ota") && (
                 <AuthTokenForm
                   key={c.id + "-tok"}
-                  hasToken={!!(() => { try { return JSON.parse(c.config || "{}").auth_token; } catch { return false; } })()}
+                  hasToken={!!c.has_secret}
                   disabled={!!busy}
                   onSave={(tok) => saveAuthToken(c, tok)}
                 />

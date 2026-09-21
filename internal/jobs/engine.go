@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/smtp"
@@ -12,21 +13,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zyvorai/yard/internal/egress"
 	"github.com/zyvorai/yard/internal/model"
 	"github.com/zyvorai/yard/internal/sse"
 	"github.com/zyvorai/yard/internal/store"
 )
 
 type Engine struct {
-	Store *store.Store
-	Hub   *sse.Hub
-	Log   *slog.Logger
-	HTTP  *http.Client
+	Store  *store.Store
+	Hub    *sse.Hub
+	Log    *slog.Logger
+	HTTP   *http.Client
+	Policy *egress.Policy
 }
 
 func (e *Engine) client() *http.Client {
 	if e.HTTP != nil {
 		return e.HTTP
+	}
+	if e.Policy != nil {
+		return e.Policy.HTTPClient(8*time.Second, false)
 	}
 	return &http.Client{Timeout: 8 * time.Second}
 }
@@ -277,6 +283,14 @@ func configString(cfg, key string) string {
 // fireSlack, and firePagerDuty: what distinguishes them is the target URL
 // and payload shape, not the delivery mechanism.
 func (e *Engine) postJSON(ctx context.Context, orgID, automationID, assetID, kind, url string, payload any) error {
+	if e.Policy != nil {
+		if err := e.Policy.Validate(url); err != nil {
+			if e.Log != nil {
+				e.Log.Error(kind, "err", err)
+			}
+			return nil
+		}
+	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -287,12 +301,17 @@ func (e *Engine) postJSON(ctx context.Context, orgID, automationID, assetID, kin
 	resp, err := e.client().Do(req)
 	if err != nil {
 		if e.Log != nil {
-			e.Log.Error(kind, "url", url, "err", err)
+			e.Log.Error(kind, "err", err)
 		}
 		return nil
 	}
 	defer resp.Body.Close()
-	_ = e.Store.Audit(ctx, orgID, "automation:"+automationID, kind, assetID, fmt.Sprintf("%s → %d", url, resp.StatusCode))
+	if e.Policy != nil {
+		_, _ = e.Policy.ReadAll(resp.Body)
+	} else {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	}
+	_ = e.Store.Audit(ctx, orgID, "automation:"+automationID, kind, assetID, fmt.Sprintf("status %d", resp.StatusCode))
 	return nil
 }
 

@@ -74,12 +74,21 @@ bootstrap ingest/simulator tokens, distinct from both of the above.
   duration); set `YARD_LOG_FORMAT=json` for machine-parseable output
 
 
-## OIDC discovery (partial)
+## OIDC discovery (Partial)
 
 `GET /api/v1/auth/oidc` returns issuer/client metadata when `YARD_OIDC_ISSUER`
 and `YARD_OIDC_CLIENT_ID` are set (Helm chart `oidc.*` values map to these
 env vars). The browser authorization-code callback is not wired yet — treat
-this as discovery-only until the callback lands.
+this as discovery-only.
+
+## Production hardening
+
+- `YARD_MODE=production` disables demo credentials and sample data.
+- Connector secrets are encrypted and redacted from API responses.
+- Login failures are rate-limited; sessions can be listed and revoked.
+- SSE uses short-lived tickets instead of session tokens in the URL.
+- Outbound connector calls enforce scheme, private-network, and redirect policy.
+- `/readyz` checks the database and migration version.
 
 ## Audit
 
