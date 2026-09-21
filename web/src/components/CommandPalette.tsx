@@ -11,6 +11,7 @@ const ROUTES: Item[] = [
   { id: "r-sites", label: "Sites", hint: "Locations", to: "/sites" },
   { id: "r-map", label: "Map", hint: "MapLibre", to: "/map" },
   { id: "r-telem", label: "Telemetry", hint: "Signals", to: "/telemetry" },
+  { id: "r-dash", label: "Dashboards", hint: "Saved panels", to: "/dashboards" },
   { id: "r-work", label: "Work orders", hint: "Maintenance", to: "/work" },
   { id: "r-inc", label: "Incidents", hint: "Alerts", to: "/incidents" },
   { id: "r-auto", label: "Automations", hint: "Rules", to: "/automations" },

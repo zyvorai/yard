@@ -104,8 +104,7 @@ Each connector advertises supported actions. The UI offers executable actions fo
 
 ## MQTT adapter
 
-A future adapter maps MQTT payloads onto the same HTTP ingest contract.
-Topic and payload mapping belong in the adapter, not in the core schema.
+Set `YARD_MQTT_URL` and Yard subscribes to `yard/+/observations` (override with `YARD_MQTT_TOPIC`). The payload is the same JSON as `POST /api/v1/ingest/observations`. The asset external ref is `asset_external_ref` in the body or the second topic segment (`yard/{ref}/observations`). When the database has more than one organization, set `YARD_MQTT_ORG` to that organization's id. Leave `YARD_MQTT_URL` empty and the subscriber stays off.
 
 ## Related product surfaces
 

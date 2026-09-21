@@ -98,8 +98,11 @@ flowchart TD
 | Historical charts / sparklines / time-range query | Have |
 | Multi-signal dashboards per asset | Have |
 | Capability min/max enforcement + soft/hard alarms | Have (`capability_min`/`capability_max` automation triggers) |
-| Metric retention / downsampling | Partial (admin sets `retention_days`; downsampling later) |
+| Metric retention / downsampling | Have (admin `retention_days`; numeric rows older than 24h become hourly rollups) |
 | Typed values (number, bool, text) | Have (`value_kind` / `value_text`; charts stay numeric) |
+| Prometheus remote write and OTLP JSON ingest | Have |
+| MQTT subscriber | Have when `YARD_MQTT_URL` is set |
+| Saved dashboards | Have |
 | Anomaly detection | Later |
 | Export telemetry (CSV, Prometheus, OTLP) | Later |
 
@@ -147,7 +150,7 @@ flowchart TD
 | Nodra decoded telemetry ingest | Have (`telemetry.receive` sync → ingest) |
 | Zyvor Fleet lifecycle / desired-state display | Have (`desired.progress` + asset Integrations tab) |
 | OTA campaign list / update delegate (display) | Have (`campaign.list` via Fleet or Nodra) |
-| MQTT adapter → HTTP ingest | Later |
+| MQTT adapter → HTTP ingest | Have (`YARD_MQTT_URL`, topic `yard/+/observations`) |
 | Webhook egress (Yard → customer systems) | Have |
 | Complete OpenAPI + SDKs | Have (full route/schema coverage; hand-authored Go + TypeScript clients in `sdk/`) |
 | OPC-UA / Modbus | Boundary (Nodra) |

@@ -12,7 +12,7 @@ type Program struct {
 
 // Programs is the sequenced post-foundation roadmap.
 var Programs = []Program{
-	{4, "Telemetry Data Platform", "planned"},
+	{4, "Telemetry Data Platform", "have"},
 	{5, "Intelligent Incident Management", "planned"},
 	{6, "Safe Automation and Playbook Engine", "planned"},
 	{7, "Asset Digital Twin and Operations Graph", "planned"},

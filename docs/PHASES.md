@@ -19,7 +19,7 @@ Closing loop for the product:
 | 1. Production Foundation | Have | Modes, RBAC, secrets, egress, SSE tickets, readiness | OIDC login, MFA, Vault, distributed rate limits |
 | 2. Reliable Actions | Have | Durable jobs, backoff, retry and cancel, connector sync, leader lock, live-event relay, action approval, shared login limits | Playbook approvals stay in program 6 |
 | 3. Maintenance Operations | Have | Locations, templates, links, schedules, QR labels, files, parts and labor, Field page | Skills and shifts stay in program 12 |
-| 4. Telemetry Data Platform | Partial | Retention, plus number / bool / text observations | Downsampling, extra ingest, dashboards |
+| 4. Telemetry Data Platform | Have | Retention, typed values, hourly rollups, remote write, OTLP JSON, MQTT, saved dashboards | Timescale and histogram payloads |
 | 5–16 | Planned | Names and order in `internal/platform` | All of the behavior described in those phases |
 
 The public lab at `http://175.110.122.71:18081` runs **demo** mode. Demo credentials are valid there on purpose. A production install must set `YARD_MODE=production` (see [SECURITY.md](../SECURITY.md)).
@@ -94,9 +94,13 @@ Field (`/field`) is the technician page. The first online visit stores open work
 
 ## 4. Telemetry Data Platform (Partial)
 
-Observations keep a numeric `value`. `value_kind` is `number` (the default), `bool`, or `text`. A bool or text reading also stores `value_text` and does not trip a numeric threshold. Charts plot numbers only. An organization `retention_days` of 0 keeps every observation. A positive value, set by an admin with `PATCH /api/v1/org`, makes the leader replica delete observations older than that many days about once an hour.
+Observations keep a numeric `value`. `value_kind` is `number` (the default), `bool`, or `text`. A bool or text reading also stores `value_text` and does not trip a numeric threshold. Charts plot numbers only. An organization `retention_days` of 0 keeps every observation. A positive value, set by an admin with `PATCH /api/v1/org`, makes the leader replica delete observations and hourly rollups older than that many days. The same hourly tick first folds numeric observations older than 24 hours into `observation_rollups` (min, max, sum, sample count). History queries return those hourly averages with `source` `rollup`. On PostgreSQL that rollup table is partitioned by month. Timescale is not bundled.
 
-Not built yet: downsampling, partitioned or Timescale storage, MQTT / remote-write / OTLP ingest, and a dashboard builder.
+Ingest accepts the existing observation JSON, a snappy-compressed Prometheus remote-write body at `POST /api/v1/ingest/remote-write` (series need an `asset`, `yard_asset`, or `external_ref` label), and OTLP JSON gauges and sums at `POST /api/v1/ingest/otlp/v1/metrics` (`yard.asset` or `service.name`). `YARD_MQTT_URL` subscribes to `yard/+/observations` (override with `YARD_MQTT_TOPIC`). The payload is the same observation JSON. When more than one organization exists, set `YARD_MQTT_ORG`.
+
+`GET` and `POST /api/v1/dashboards`, and `PATCH` or `DELETE /api/v1/dashboards/{id}`, store up to 12 panels. Each panel is an asset and a capability. The Dashboards page draws the last day of that signal.
+
+Not built: a Timescale extension, histogram or image payloads, and a free-form query builder.
 
 ## 5. Intelligent Incident Management (Planned)
 

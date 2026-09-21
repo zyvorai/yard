@@ -10,6 +10,7 @@ import Sites from "./pages/Sites";
 import Locations from "./pages/Locations";
 import MapPage from "./pages/MapPage";
 import Telemetry from "./pages/Telemetry";
+import Dashboards from "./pages/Dashboards";
 import WorkOrders from "./pages/WorkOrders";
 import Field from "./pages/Field";
 import Incidents from "./pages/Incidents";
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/locations" element={<Locations />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/telemetry" element={<Telemetry />} />
+          <Route path="/dashboards" element={<Dashboards />} />
           <Route path="/work" element={<WorkOrders />} />
           <Route path="/field" element={<Field />} />
           <Route path="/incidents" element={<Incidents />} />

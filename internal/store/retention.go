@@ -22,5 +22,8 @@ func (s *Store) PurgeObservationsBefore(ctx context.Context, orgID string, befor
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
+	if _, err := s.exec(ctx, `DELETE FROM observation_rollups WHERE organization_id=? AND bucket_start<?`, orgID, before.UTC().Format(time.RFC3339Nano)); err != nil {
+		return n, err
+	}
 	return n, nil
 }

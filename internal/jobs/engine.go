@@ -97,6 +97,9 @@ func (e *Engine) StartRetention(ctx context.Context, every time.Duration) {
 }
 
 func (e *Engine) RunRetention(ctx context.Context, now time.Time) error {
+	if _, err := e.Store.DownsampleBefore(ctx, now.Add(-24*time.Hour)); err != nil {
+		return err
+	}
 	orgs, err := e.Store.ListOrgIDs(ctx)
 	if err != nil {
 		return err

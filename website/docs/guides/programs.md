@@ -32,11 +32,11 @@ Live updates use a one-time ticket:
 
 ## Planned after that
 
-Telemetry retention is the start of the data platform: an admin sets how many days of observations to keep, and the leader replica deletes the rest. An observation can be a number, a bool, or text. Downsampling, more ingest paths, and dashboards are still planned.
+An observation can be a number, a bool, or text. Numeric readings older than 24 hours roll up to an hourly min, max, and average. PostgreSQL stores those rollups in monthly partitions. Prometheus remote write, OTLP JSON metrics, and an MQTT subscriber are ingest paths. Operators save dashboards of asset signals. Timescale, histograms, and image payloads are not included.
 
 | Order | Program | Intent |
 | ---: | --- | --- |
-| 4 | Telemetry Data Platform | Retention and typed values are in. Downsampling, more ingest, and dashboards are not |
+| 4 | Telemetry Data Platform | Retention, typed values, hourly rollups, remote write, OTLP JSON, MQTT, and saved dashboards are in. Timescale and histograms are not |
 | 5 | Intelligent Incident Management | De-duplication, SLAs, on-call, one incident for a flood of symptoms |
 | 6 | Safe Automation and Playbook Engine | Multi-step recovery with dry-run and approval |
 | 7 | Asset Digital Twin and Operations Graph | Dependencies, blast radius, indoor maps |

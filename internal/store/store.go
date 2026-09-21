@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -226,6 +227,27 @@ CREATE INDEX IF NOT EXISTS work_order_lines_wo ON work_order_lines(organization_
 	{14, `ALTER TABLE organizations ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 0;`},
 	{15, `ALTER TABLE observations ADD COLUMN value_kind TEXT NOT NULL DEFAULT 'number';
 ALTER TABLE observations ADD COLUMN value_text TEXT NOT NULL DEFAULT '';`},
+	{16, `CREATE TABLE IF NOT EXISTS observation_rollups (
+  organization_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  capability TEXT NOT NULL,
+  bucket_start TEXT NOT NULL,
+  samples INTEGER NOT NULL,
+  value_min REAL NOT NULL,
+  value_max REAL NOT NULL,
+  value_sum REAL NOT NULL,
+  unit TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (organization_id, asset_id, capability, bucket_start)
+);`},
+	{17, `CREATE TABLE IF NOT EXISTS dashboards (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  panels TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS dashboards_org ON dashboards(organization_id, updated_at);`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
@@ -362,7 +384,7 @@ func (s *Store) applyMigrations() error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(m.sql); err != nil {
+		if _, err := tx.Exec(s.migrationSQL(m)); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("schema migration %d: %w", m.version, err)
 		}
@@ -1013,10 +1035,22 @@ func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string
 		o.ReceivedAt = parseTime(rec)
 		out = append(out, o)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rolls, err := s.listRollups(ctx, orgID, assetID, cap, from, to, limit)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, rolls...)
+	sort.Slice(out, func(i, j int) bool { return out[i].ObservedAt.After(out[j].ObservedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
 	if out == nil {
 		out = []model.Observation{}
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Store) LatestTelemetry(ctx context.Context, orgID string) ([]model.TelemetryPoint, error) {

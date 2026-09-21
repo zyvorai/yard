@@ -18,6 +18,7 @@ const NAV_ICONS: Record<string, ReactNode> = {
   "/locations": navIcon("M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11ZM12 11a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"),
   "/map": navIcon("M9 20l-6-2V4l6 2 6-2 6 2v14l-6-2-6 2ZM9 6v14M15 4v14"),
   "/telemetry": navIcon("M3 12h4l2 7 4-14 2 7h4"),
+  "/dashboards": navIcon("M4 4h7v7H4V4ZM13 4h7v7h-7V4ZM4 13h7v7H4v-7ZM13 13h7v7h-7v-7Z"),
   "/work": navIcon("M9 4h6a1 1 0 0 1 1 1v2H8V5a1 1 0 0 1 1-1ZM5 7h14v13H5V7Z"),
   "/field": navIcon("M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM12 8v4l2 2"),
   "/incidents": navIcon("M12 3l9 16H3l9-16ZM12 10v4M12 17.5v.01"),
@@ -36,6 +37,7 @@ const items: [string, string, string][] = [
   ["/locations", "Locations", "teal"],
   ["/map", "Map", "purple"],
   ["/telemetry", "Telemetry", "pink"],
+  ["/dashboards", "Dashboards", "pink"],
   ["/work", "Work orders", "ok"],
   ["/field", "Field", "teal"],
   ["/incidents", "Incidents", "bad"],
@@ -103,14 +105,14 @@ export default function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <nav className="nav">
-          {items.slice(0, 8).map(([to, label, tone]) => (
+          {items.slice(0, 9).map(([to, label, tone]) => (
             <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "active" : "")}>
               <span className={`nav-icon-chip tone-${tone}`}>{NAV_ICONS[to]}</span>
               {label}
             </NavLink>
           ))}
           <div className="sec">Platform</div>
-          {items.slice(8).map(([to, label, tone]) => (
+          {items.slice(9).map(([to, label, tone]) => (
             <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "active" : "")}>
               <span className={`nav-icon-chip tone-${tone}`}>{NAV_ICONS[to]}</span>
               {label}

@@ -136,9 +136,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/asset-links", s.withUser(s.assetLinks))
 	mux.HandleFunc("/api/v1/onboarding", s.withUser(s.onboarding))
 	mux.HandleFunc("/api/v1/geocode", s.withUser(s.geocode))
+	mux.HandleFunc("/api/v1/dashboards", s.withUser(s.dashboards))
+	mux.HandleFunc("/api/v1/dashboards/", s.withUser(s.dashboardItem))
 	mux.HandleFunc("/api/v1/ingest/observations", s.rateIngest(s.withConnector(s.ingestObs)))
 	mux.HandleFunc("/api/v1/ingest/inventory", s.rateIngest(s.withConnector(s.ingestInv)))
 	mux.HandleFunc("/api/v1/ingest/events", s.rateIngest(s.withConnector(s.ingestEvt)))
+	mux.HandleFunc("/api/v1/ingest/remote-write", s.rateIngest(s.withConnector(s.ingestRemoteWrite)))
+	mux.HandleFunc("/api/v1/ingest/otlp/v1/metrics", s.rateIngest(s.withConnector(s.ingestOTLP)))
 	if s.Static != nil {
 		mux.Handle("/", s.spa())
 	}

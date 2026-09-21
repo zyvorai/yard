@@ -257,6 +257,21 @@ type TelemetryPoint struct {
 	Fresh      bool      `json:"fresh"`
 }
 
+type DashboardPanel struct {
+	AssetID    string `json:"asset_id"`
+	Capability string `json:"capability"`
+	Title      string `json:"title,omitempty"`
+}
+
+type Dashboard struct {
+	ID             string           `json:"id"`
+	OrganizationID string           `json:"organization_id"`
+	Name           string           `json:"name"`
+	Panels         []DashboardPanel `json:"panels"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
+}
+
 type IngestObservation struct {
 	AssetExternalRef string    `json:"asset_external_ref"`
 	AssetID          string    `json:"asset_id"`
