@@ -1,0 +1,5 @@
+name: sap
+kind: sap
+action: notification.create
+body:
+  short_text: Yard notification

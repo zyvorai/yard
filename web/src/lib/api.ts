@@ -20,9 +20,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (tok) headers.set("Authorization", `Bearer ${tok}`);
   const res = await fetch(path, { ...init, headers });
   if (res.status === 401) {
-    clearToken();
-    if (!path.includes("/auth/login")) window.location.href = "/login";
-    throw new Error("unauthorized");
+    const text = await res.text();
+    if (!path.includes("/auth/login")) {
+      clearToken();
+      window.location.href = "/login";
+    }
+    throw new Error(text || "unauthorized");
   }
   if (!res.ok) {
     const text = await res.text();
@@ -65,6 +68,7 @@ export type Asset = {
   longitude?: number;
   last_seen_at?: string;
   stale_after_sec: number;
+  desired_state?: string;
 };
 
 export type Site = {
@@ -86,9 +90,19 @@ export type Incident = {
   resolution: string;
   runbook?: string;
   asset_id?: string;
+  parent_id?: string;
+  flap_count: number;
   opened_at: string;
+  acked_at?: string;
+  ack_due_at?: string;
+  resolve_due_at?: string;
   resolved_at?: string;
+  ack_breached: boolean;
+  resolve_breached: boolean;
 };
+
+export type IncidentNote = { at: string; kind: string; title: string };
+export type OnCall = { id: string; user_id: string; display_name?: string; starts_at: string; ends_at: string };
 
 export type SeverityPolicy = {
   id: string;
@@ -113,6 +127,7 @@ export type WorkOrder = {
   asset_id?: string;
   due_at?: string;
   schedule_cron?: string;
+  checklist?: string;
   created_at: string;
 };
 

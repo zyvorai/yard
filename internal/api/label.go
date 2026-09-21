@@ -53,8 +53,17 @@ func (s *Server) assetLookup(w http.ResponseWriter, r *http.Request, u *model.Us
 		return
 	}
 	code := labelCode(r.URL.Query().Get("q"))
+	if nfc := r.URL.Query().Get("nfc"); nfc != "" {
+		a, err := s.Store.AssetByNFC(r.Context(), u.OrganizationID, nfc)
+		if err != nil {
+			writeJSON(w, 404, map[string]string{"error": "asset not found"})
+			return
+		}
+		writeJSON(w, 200, a)
+		return
+	}
 	if code == "" {
-		writeJSON(w, 400, map[string]string{"error": "q required"})
+		writeJSON(w, 400, map[string]string{"error": "q or nfc required"})
 		return
 	}
 	a, err := s.Store.AssetByID(r.Context(), u.OrganizationID, code)

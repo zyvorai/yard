@@ -54,6 +54,7 @@ export default function Overview() {
   const [err, setErr] = useState("");
   const [live, setLive] = useState(false);
   const [pulse, setPulse] = useState("");
+  const [widgets, setWidgets] = useState<string[]>(["health", "incidents", "work", "activity"]);
 
   const refresh = useCallback(() => {
     api<Ov>("/api/v1/overview").then((d) => {
@@ -63,6 +64,11 @@ export default function Overview() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    api<{ widgets?: string[] }>("/api/v1/me/prefs").then((p) => {
+      if (Array.isArray(p.widgets) && p.widgets.length) setWidgets(p.widgets);
+    }).catch(() => {});
+  }, []);
 
   useYardStream((ev) => {
     setLive(true);
@@ -81,6 +87,7 @@ export default function Overview() {
 
   if (err) return <p>{err}</p>;
   if (!data) return <p className="lede">Loading workspace…</p>;
+  const show = (name: string) => widgets.includes(name) || widgets.includes("health");
   return (
     <>
       <div className="topbar">
@@ -94,13 +101,14 @@ export default function Overview() {
         </div>
       </div>
       <div className="grid stats">
-        <div className="card"><h2>Assets</h2><div className="metric">{data.assets_total}</div></div>
-        <div className="card"><h2>Healthy</h2><div className="metric">{data.assets_healthy}<small>{data.assets_stale} stale</small></div></div>
-        <div className="card"><h2>Open incidents</h2><div className="metric">{data.open_incidents}<small>{data.assets_critical} critical</small></div></div>
-        <div className="card"><h2>Work orders</h2><div className="metric">{data.open_work_orders}<small>{data.active_connectors} connectors</small></div></div>
+        {(widgets.includes("health") || widgets.length === 0) && <div className="card"><h2>Assets</h2><div className="metric">{data.assets_total}</div></div>}
+        {widgets.includes("health") && <div className="card"><h2>Healthy</h2><div className="metric">{data.assets_healthy}<small>{data.assets_stale} stale</small></div></div>}
+        {widgets.includes("incidents") && <div className="card"><h2>Open incidents</h2><div className="metric">{data.open_incidents}<small>{data.assets_critical} critical</small></div></div>}
+        {widgets.includes("work") && <div className="card"><h2>Work orders</h2><div className="metric">{data.open_work_orders}<small>{data.active_connectors} connectors</small></div></div>}
       </div>
       <div className="grid split" style={{ marginTop: 16 }}>
         <div>
+          {show("activity") && (
           <GroupedList title="Recent events">
             {data.recent_events?.length ? (
               data.recent_events.map((e) => (
@@ -123,8 +131,10 @@ export default function Overview() {
               </div>
             )}
           </GroupedList>
+          )}
         </div>
         <div>
+          {widgets.includes("activity") && (
           <GroupedList title="Activity">
             {data.recent_activity?.length ? (
               data.recent_activity.map((a) => (
@@ -140,6 +150,7 @@ export default function Overview() {
               <div className="settings-row"><span className="row-body"><span className="row-description">No activity yet.</span></span></div>
             )}
           </GroupedList>
+          )}
         </div>
       </div>
     </>

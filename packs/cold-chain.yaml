@@ -1,0 +1,20 @@
+name: cold-chain
+templates:
+  - name: Cooler
+    kind: equipment
+    capabilities: [temperature, door]
+dashboard:
+  name: Cold rooms
+  capabilities: [temperature, door]
+automations:
+  - name: Warm cooler
+    capability: temperature
+    operator: gt
+    threshold: 8
+    action: open_incident
+  - name: Door open
+    capability: door
+    operator: gt
+    threshold: 0
+    action: notify
+work_order: Inspect cooler

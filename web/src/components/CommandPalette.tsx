@@ -15,6 +15,8 @@ const ROUTES: Item[] = [
   { id: "r-work", label: "Work orders", hint: "Maintenance", to: "/work" },
   { id: "r-inc", label: "Incidents", hint: "Alerts", to: "/incidents" },
   { id: "r-auto", label: "Automations", hint: "Rules", to: "/automations" },
+  { id: "r-play", label: "Playbooks", hint: "Steps", to: "/playbooks" },
+  { id: "r-cost", label: "Cost", hint: "Energy and downtime", to: "/cost" },
   { id: "r-int", label: "Integrations", hint: "Connectors", to: "/integrations" },
   { id: "r-admin", label: "Administration", hint: "Audit", to: "/admin" },
   { id: "r-diag", label: "Diagnostics", hint: "Logs", to: "/diagnostics" },

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState, type ReactNode } from "react";
-import { api } from "../lib/api";
+import { api, getToken } from "../lib/api";
 
-type Place = { id: string; name: string; kind: string; parent_id?: string };
+type Place = { id: string; name: string; kind: string; parent_id?: string; floorplan?: string };
 type Template = { id: string; name: string; kind: string };
 type LinkRow = { id: string; from_asset_id: string; to_asset_id: string; relation: string };
 type Me = { role: string };
@@ -18,6 +18,9 @@ export default function Locations() {
   const [parent, setParent] = useState("");
   const [tpl, setTpl] = useState("");
   const [msg, setMsg] = useState("");
+  const [place, setPlace] = useState("");
+  const [pins, setPins] = useState<{ id: string; name: string; floor_x?: number; floor_y?: number }[]>([]);
+  const [planURL, setPlanURL] = useState("");
 
   async function load() {
     const [locs, tpls, lns, me] = await Promise.all([
@@ -60,12 +63,33 @@ export default function Locations() {
     }
   }
 
+  async function show(id: string) {
+    setPlace(id);
+    try {
+      setPins(await api(`/api/v1/locations/${id}/pins`));
+    } catch {
+      setPins([]);
+    }
+    const row = rows.find((item) => item.id === id);
+    if (!row?.floorplan) {
+      setPlanURL("");
+      return;
+    }
+    const res = await fetch(`/api/v1/locations/${id}/floorplan`, { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) {
+      setPlanURL("");
+      return;
+    }
+    setPlanURL(URL.createObjectURL(await res.blob()));
+  }
+
   const byParent = (id?: string) => rows.filter((r) => (r.parent_id || "") === (id || ""));
 
   function tree(parentID: string | undefined, depth: number): ReactNode[] {
     return byParent(parentID).flatMap((row) => [
       <div key={row.id} style={{ paddingLeft: depth * 16, marginBottom: 6 }}>
-        <strong>{row.name}</strong> <span className="pill info">{row.kind}</span>
+        <button type="button" className="btn small ghost" onClick={() => void show(row.id)}>{row.name}</button> <span className="pill info">{row.kind}</span>
+        {row.floorplan ? <span className="lede"> · plan {row.floorplan}</span> : null}
       </div>,
       ...tree(row.id, depth + 1),
     ]);
@@ -110,6 +134,11 @@ export default function Locations() {
               <button className="btn small ghost" type="submit" style={{ marginTop: 8 }}>Add template</button>
             </form>
           )}
+          <h2 style={{ marginTop: 20 }}>Floor plan</h2>
+          {!place && <p className="empty">Choose a place to see its pins.</p>}
+          {planURL && <img src={planURL} alt="Floor plan" style={{ maxWidth: "100%", marginTop: 8 }} />}
+          {place && pins.map((pin) => <p key={pin.id} className="lede">{pin.name} at {pin.floor_x ?? "—"}, {pin.floor_y ?? "—"}</p>)}
+          {place && !pins.length && <p className="empty">No floor pins on this place.</p>}
           <h2 style={{ marginTop: 20 }}>Asset links</h2>
           {links.map((l) => <p key={l.id} className="lede">{l.relation}: {l.from_asset_id} → {l.to_asset_id}</p>)}
           {!links.length && <p className="empty">No links yet. Create them from the API with relation installed-on or depends-on.</p>}

@@ -41,6 +41,14 @@ func Load() (Config, error) {
 	cors := splitCSV(os.Getenv("YARD_CORS_ORIGINS"))
 	allow := splitCSV(os.Getenv("YARD_EGRESS_ALLOWLIST"))
 
+	keyMaterial := os.Getenv("YARD_SECRET_KEY")
+	if addr := strings.TrimSpace(os.Getenv("YARD_VAULT_ADDR")); addr != "" {
+		got, verr := secrets.FetchVaultKey(addr, os.Getenv("YARD_VAULT_TOKEN"), os.Getenv("YARD_VAULT_PATH"))
+		if verr != nil {
+			return Config{}, verr
+		}
+		keyMaterial = got
+	}
 	var key []byte
 	var err error
 	if mode == "production" {
@@ -51,12 +59,12 @@ func Load() (Config, error) {
 		if perr != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return Config{}, fmt.Errorf("YARD_PUBLIC_URL must be an absolute http(s) url")
 		}
-		key, err = secrets.ParseKey(os.Getenv("YARD_SECRET_KEY"))
+		key, err = secrets.ParseKey(keyMaterial)
 		if err != nil {
 			return Config{}, fmt.Errorf("production requires YARD_SECRET_KEY: %w", err)
 		}
 	} else {
-		key, err = secrets.LoadOrCreate(dataDir, os.Getenv("YARD_SECRET_KEY"))
+		key, err = secrets.LoadOrCreate(dataDir, keyMaterial)
 		if err != nil {
 			return Config{}, err
 		}

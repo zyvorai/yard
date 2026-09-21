@@ -10,6 +10,7 @@ import (
 	"github.com/zyvorai/yard/internal/connectors"
 	"github.com/zyvorai/yard/internal/idgen"
 	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/playbook"
 	"github.com/zyvorai/yard/internal/store"
 )
 
@@ -83,6 +84,8 @@ func (w *Worker) run(ctx context.Context, job *store.Job) (status, result string
 		_ = w.Store.RecordConnectorProbe(ctx, conn.ID, errString(err), int(time.Since(start).Milliseconds()), err == nil)
 		_ = w.Store.CompleteAction(ctx, p.ActionID, st, res)
 		return st, res, err
+	case "playbook":
+		return w.runPlaybook(ctx, job)
 	default:
 		return "failed", "", fmt.Errorf("unknown job kind %q", job.Kind)
 	}
@@ -126,6 +129,83 @@ func EnqueueRemoteAction(ctx context.Context, st *store.Store, orgID, actionID, 
 		return nil, err
 	}
 	return job, nil
+}
+
+// EnqueuePlaybook records one job that runs every step of a playbook run.
+func EnqueuePlaybook(ctx context.Context, st *store.Store, orgID, runID, requestedBy, status string) (*store.Job, error) {
+	if status == "" {
+		status = "queued"
+	}
+	body, _ := json.Marshal(map[string]string{"run_id": runID, "requested_by": requestedBy})
+	job := &store.Job{
+		OrganizationID: orgID,
+		Kind:           "playbook",
+		Status:         status,
+		MaxAttempts:    5,
+		Payload:        string(body),
+		RunAfter:       time.Now().UTC(),
+	}
+	if err := st.CreateJob(ctx, job); err != nil {
+		return nil, err
+	}
+	return job, nil
+}
+
+func (w *Worker) runPlaybook(ctx context.Context, job *store.Job) (string, string, error) {
+	var p struct {
+		RunID string `json:"run_id"`
+	}
+	if json.Unmarshal([]byte(job.Payload), &p) != nil || p.RunID == "" {
+		return "failed", "", fmt.Errorf("invalid playbook payload")
+	}
+	run, err := w.Store.PlaybookRunByID(ctx, job.OrganizationID, p.RunID)
+	if err != nil {
+		return "failed", "", err
+	}
+	pb, err := w.Store.PlaybookByID(ctx, job.OrganizationID, run.PlaybookID)
+	if err != nil {
+		return "failed", "", err
+	}
+	doc, err := playbook.Parse(pb.Body)
+	if err != nil {
+		return "failed", "", err
+	}
+	conn, err := w.Store.ConnectorByID(ctx, job.OrganizationID, run.ConnectorID)
+	if err != nil {
+		return "failed", "", err
+	}
+	for i := run.StepIndex; i < len(doc.Steps); i++ {
+		step := doc.Steps[i]
+		act := &model.ActionRequest{
+			OrganizationID: job.OrganizationID,
+			AssetID:        &run.AssetID,
+			ConnectorID:    &run.ConnectorID,
+			Action:         step.Action,
+			IdempotencyKey: idgen.New("idem"),
+			Status:         "running",
+			Payload:        step.Payload,
+			ExpiresAt:      time.Now().UTC().Add(15 * time.Minute),
+		}
+		if err := w.Store.CreateAction(ctx, act); err != nil {
+			return "failed", "", err
+		}
+		st, res, err := w.Dispatch.Execute(ctx, job.OrganizationID, conn, step.Action, step.Payload)
+		if err != nil {
+			_ = w.Store.CompleteAction(ctx, act.ID, "failed", err.Error())
+			run.StepIndex = i
+			run.Status = "failed"
+			run.Error = err.Error()
+			_ = w.Store.SavePlaybookRun(ctx, run)
+			return "failed", res, err
+		}
+		_ = w.Store.CompleteAction(ctx, act.ID, st, res)
+		run.StepIndex = i + 1
+		_ = w.Store.SavePlaybookRun(ctx, run)
+	}
+	run.Status = "completed"
+	run.Error = ""
+	_ = w.Store.SavePlaybookRun(ctx, run)
+	return "completed", "playbook finished", nil
 }
 
 // NeedsApproval reports connector actions that must be approved by a second operator.

@@ -56,27 +56,39 @@ type Site struct {
 }
 
 type Asset struct {
-	ID             string     `json:"id"`
-	OrganizationID string     `json:"organization_id"`
-	SiteID         *string    `json:"site_id,omitempty"`
-	Name           string     `json:"name"`
-	ExternalRef    string     `json:"external_ref"`
-	Kind           string     `json:"kind"`
-	Status         string     `json:"status"`
-	Health         string     `json:"health"`
-	Manufacturer   string     `json:"manufacturer"`
-	Model          string     `json:"model"`
-	Serial         string     `json:"serial"`
-	Latitude       *float64   `json:"latitude,omitempty"`
-	Longitude      *float64   `json:"longitude,omitempty"`
-	LastSeenAt     *time.Time `json:"last_seen_at,omitempty"`
-	StaleAfterSec  int        `json:"stale_after_sec"`
-	Metadata       string     `json:"metadata"`
-	ParentAssetID  *string    `json:"parent_asset_id,omitempty"`
-	LocationID     *string    `json:"location_id,omitempty"`
-	TemplateID     *string    `json:"template_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID                   string     `json:"id"`
+	OrganizationID       string     `json:"organization_id"`
+	SiteID               *string    `json:"site_id,omitempty"`
+	Name                 string     `json:"name"`
+	ExternalRef          string     `json:"external_ref"`
+	Kind                 string     `json:"kind"`
+	Status               string     `json:"status"`
+	Health               string     `json:"health"`
+	Manufacturer         string     `json:"manufacturer"`
+	Model                string     `json:"model"`
+	Serial               string     `json:"serial"`
+	Latitude             *float64   `json:"latitude,omitempty"`
+	Longitude            *float64   `json:"longitude,omitempty"`
+	LastSeenAt           *time.Time `json:"last_seen_at,omitempty"`
+	StaleAfterSec        int        `json:"stale_after_sec"`
+	Metadata             string     `json:"metadata"`
+	ParentAssetID        *string    `json:"parent_asset_id,omitempty"`
+	LocationID           *string    `json:"location_id,omitempty"`
+	TemplateID           *string    `json:"template_id,omitempty"`
+	DesiredState         string     `json:"desired_state,omitempty"`
+	DowntimeCentsPerHour int        `json:"downtime_cents_per_hour,omitempty"`
+	ReplacementCostCents int        `json:"replacement_cost_cents,omitempty"`
+	FloorX               *float64   `json:"floor_x,omitempty"`
+	FloorY               *float64   `json:"floor_y,omitempty"`
+	NFCID                string     `json:"nfc_id,omitempty"`
+	PurchasedAt          *time.Time `json:"purchased_at,omitempty"`
+	WarrantyExpiresAt    *time.Time `json:"warranty_expires_at,omitempty"`
+	PurchaseCents        int        `json:"purchase_cents,omitempty"`
+	UsefulLifeMonths     int        `json:"useful_life_months,omitempty"`
+	BookValueCents       int        `json:"book_value_cents,omitempty"`
+	DeletedAt            *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type Capability struct {
@@ -117,22 +129,48 @@ type Event struct {
 	Body           string    `json:"body"`
 	DedupeKey      string    `json:"dedupe_key,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
+	Region         string    `json:"region,omitempty"`
+	Replicated     bool      `json:"-"`
 }
 
 type Incident struct {
-	ID             string     `json:"id"`
-	OrganizationID string     `json:"organization_id"`
-	AssetID        *string    `json:"asset_id,omitempty"`
-	SiteID         *string    `json:"site_id,omitempty"`
-	Title          string     `json:"title"`
-	Severity       string     `json:"severity"`
-	Status         string     `json:"status"`
-	Owner          string     `json:"owner"`
-	Summary        string     `json:"summary"`
-	Resolution     string     `json:"resolution"`
-	Runbook        string     `json:"runbook,omitempty"`
-	OpenedAt       time.Time  `json:"opened_at"`
-	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
+	ID              string     `json:"id"`
+	OrganizationID  string     `json:"organization_id"`
+	AssetID         *string    `json:"asset_id,omitempty"`
+	SiteID          *string    `json:"site_id,omitempty"`
+	ParentID        string     `json:"parent_id,omitempty"`
+	Title           string     `json:"title"`
+	Severity        string     `json:"severity"`
+	Status          string     `json:"status"`
+	Owner           string     `json:"owner"`
+	Summary         string     `json:"summary"`
+	Resolution      string     `json:"resolution"`
+	Runbook         string     `json:"runbook,omitempty"`
+	FlapCount       int        `json:"flap_count"`
+	FlapArmed       bool       `json:"-"`
+	OpenedAt        time.Time  `json:"opened_at"`
+	AckedAt         *time.Time `json:"acked_at,omitempty"`
+	AckDueAt        *time.Time `json:"ack_due_at,omitempty"`
+	ResolveDueAt    *time.Time `json:"resolve_due_at,omitempty"`
+	ResolvedAt      *time.Time `json:"resolved_at,omitempty"`
+	AckBreached     bool       `json:"ack_breached"`
+	ResolveBreached bool       `json:"resolve_breached"`
+}
+
+// IncidentNote is one row on an incident timeline.
+type IncidentNote struct {
+	At    time.Time `json:"at"`
+	Kind  string    `json:"kind"`
+	Title string    `json:"title"`
+}
+
+// OnCall is a window when a user owns new incidents.
+type OnCall struct {
+	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
+	DisplayName string    `json:"display_name,omitempty"`
+	StartsAt    time.Time `json:"starts_at"`
+	EndsAt      time.Time `json:"ends_at"`
 }
 
 // SeverityPolicy maps automation/capability matches to severity + runbook text.
@@ -216,6 +254,33 @@ type Automation struct {
 	Action         string    `json:"action"`
 	Config         string    `json:"config"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+type Playbook struct {
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id"`
+	Name           string    `json:"name"`
+	Body           string    `json:"body"`
+	SourceURL      string    `json:"source_url,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type PlaybookRun struct {
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organization_id"`
+	PlaybookID     string    `json:"playbook_id"`
+	AssetID        string    `json:"asset_id"`
+	ConnectorID    string    `json:"connector_id,omitempty"`
+	Status         string    `json:"status"`
+	RequestedBy    string    `json:"requested_by,omitempty"`
+	ApprovedBy     string    `json:"approved_by,omitempty"`
+	StepIndex      int       `json:"step_index"`
+	DryRun         bool      `json:"dry_run"`
+	JobID          string    `json:"job_id,omitempty"`
+	Error          string    `json:"error,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type AuditEntry struct {

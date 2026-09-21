@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -64,6 +65,8 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"mode":         s.Runtime.Mode,
+		"edition":      "community",
+		"region":       os.Getenv("YARD_REGION"),
 		"smtp":         mail.Configured(),
 		"public_url":   s.Runtime.PublicURL,
 		"insecure_tls": s.Runtime.Mode == "demo" || s.Runtime.AllowInsecureTLS,

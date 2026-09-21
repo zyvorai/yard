@@ -7,7 +7,7 @@ import RelatedArticles from '@site/src/components/RelatedArticles';
 
 # Programs
 
-Yard connects assets, telemetry, maintenance, incidents, edge software, and remote actions. This page is the current cut: what the binary does, and what is only planned. The repository copy with the same detail is [docs/PHASES.md](https://github.com/zyvorai/yard/blob/main/docs/PHASES.md).
+Yard connects assets, telemetry, maintenance, incidents, edge software, and remote actions. This page is the current cut of what the binary does. The repository copy with the same detail is [docs/PHASES.md](https://github.com/zyvorai/yard/blob/main/docs/PHASES.md). The feature catalog is [docs/ROADMAP.md](https://github.com/zyvorai/yard/blob/main/docs/ROADMAP.md).
 
 ## Shipped foundation
 
@@ -24,35 +24,33 @@ Live updates use a one-time ticket:
 
 `/readyz` fails when the database is down or migrations are behind the binary. `/healthz` only means the process is up.
 
-## Started, not finished
+## What is in the binary
 
-**Remote actions.** A connector action returns `202` and a job. Failures back off up to 60s and then sit in `dead` until an operator retries them. Dangerous actions (`lifecycle.request`, `update.delegate`, reboot, shutdown, wipe, firmware, power off) wait in `pending_approval` until a different operator approves. Connectors can be tested, synced now, or scheduled (`sync_interval_sec`). On Postgres, one replica holds the schedule lock, and live events cross processes with `LISTEN`/`NOTIFY`.
+**Remote actions.** A connector action returns `202` and a job. Failures back off up to 60s and then sit in `dead` until an operator retries them. Dangerous actions wait in `pending_approval` until a different operator approves. Connectors can be tested, synced now, or scheduled (`sync_interval_sec`). On Postgres, one replica holds the schedule lock, and live events cross processes with `LISTEN`/`NOTIFY`.
 
-**Locations.** `GET` and `POST /api/v1/locations` store a named place with an optional parent. The console shows that tree. Asset templates and links have list and create routes. A work order `schedule_cron` such as `0 8 * * 1` opens one work order when that minute arrives. An asset QR label is `GET /api/v1/assets/{id}/label`. Manuals and photos are `POST /api/v1/assets/{id}/attachments` (8 MiB). Parts and labor are lines on a work order. **Field** (`/field`) keeps open work orders on the device and syncs a completion when the network returns.
+**Locations and field.** `GET` and `POST /api/v1/locations` store a named place with an optional parent. Asset templates, catalogs, links, QR labels, NFC lookup, BOM lines, and install history are in the API. A work order `schedule_cron` opens one work order when that minute arrives. **Field** (`/field`) keeps open work orders and manuals on the device, shows checklist and permit state while online, and syncs a completion when the network returns.
 
-## Planned after that
-
-An observation can be a number, a bool, or text. Numeric readings older than 24 hours roll up to an hourly min, max, and average. PostgreSQL stores those rollups in monthly partitions. Prometheus remote write, OTLP JSON metrics, and an MQTT subscriber are ingest paths. Operators save dashboards of asset signals. Timescale, histograms, and image payloads are not included.
+**Telemetry.** An observation can be a number, a bool, text, or a histogram. Numeric readings older than 24 hours roll up hourly. Prometheus remote write, OTLP JSON metrics, MQTT, filtered query, and CSV / Prometheus / OTLP export are ingest and read paths. Timescale is not installed. PostgreSQL keeps monthly rollup partitions.
 
 | Order | Program | Intent |
 | ---: | --- | --- |
-| 4 | Telemetry Data Platform | Retention, typed values, hourly rollups, remote write, OTLP JSON, MQTT, and saved dashboards are in. Timescale and histograms are not |
-| 5 | Intelligent Incident Management | Debounce and hysteresis are in. Flapping counts, parent incidents, SLAs, and on-call are not |
-| 6 | Safe Automation and Playbook Engine | Multi-step recovery with dry-run and approval |
-| 7 | Asset Digital Twin and Operations Graph | Dependencies, blast radius, indoor maps |
-| 8 | Integration Hub | Connector SDK and enterprise systems, still optional to the core |
-| 9 | Yard Intelligence | Explainable health scores and evidence-backed summaries |
-| 10 | Enterprise Identity and Governance | OIDC/SAML/SCIM, custom roles, audit export |
-| 11 | High Availability and Large-Scale Deployment | Replicas, shared workers, documented sizing |
-| 12 | Advanced Field Workforce | Skills, permits, offline forms, still about assets |
-| 13 | Energy, Sustainability, and Cost Intelligence | Downtime and energy cost next to maintenance |
-| 14 | Vertical Solution Packs | Templates and dashboards, not separate products |
-| 15 | Developer and Community Ecosystem | Releases, signed images, upgrade notes |
-| 16 | Commercial Platform | Enterprise features stay out of the Apache-2.0 core |
+| 4 | Telemetry Data Platform | Retention, typed values, histograms, hourly rollups, remote write, OTLP JSON, MQTT, saved dashboards, filtered query, and export are in |
+| 5 | Intelligent Incident Management | Debounce, hysteresis, flap counts, parent incidents, ack and resolve times, on-call, and a timeline are in |
+| 6 | Safe Automation and Playbook Engine | Step editor, dry-run, approval, and a source refresh are in |
+| 7 | Asset Digital Twin and Operations Graph | Desired state, twin, blast radius, geofences, and floorplan pins are in |
+| 8 | Integration Hub | Catalog, webhook, marketplace, and ServiceNow, Maximo, and SAP create clients plus sync are in |
+| 9 | Yard Intelligence | Score, anomaly, cited answers, and approved writes are in |
+| 10 | Enterprise Identity and Governance | OIDC, SAML, SCIM, WebAuthn storage, authenticator codes, custom roles, audit CSV, Vault key fetch, and a required customer key are in |
+| 11 | High Availability and Large-Scale Deployment | SKIP LOCKED claims, a shared ingest budget, and peer event replication are in. The public lab runs one region |
+| 12 | Advanced Field Workforce | Permits, skills, shifts, and offline manuals are in |
+| 13 | Energy, Sustainability, and Cost Intelligence | Tariffs, carbon, and a 7-day forecast are on `/cost` |
+| 14 | Vertical Solution Packs | Five packs import templates, a dashboard, automations, and a work order |
+| 15 | Developer and Community Ecosystem | Tag builds cover amd64 and arm64 and sign the checksum file with cosign keyless |
+| 16 | Commercial Platform | `/api/v1/meta` reports `edition: community`. Admins can export a compliance CSV. This repo does not bill |
 
-OIDC today is discovery metadata only. Do not treat `GET /api/v1/auth/oidc` as single sign-on.
+OIDC login is `GET /api/v1/auth/oidc/start` and the callback at `/api/v1/auth/oidc/callback`. Production matches an existing user. Demo creates one only when `YARD_OIDC_PROVISION=1`. SAML is `POST /api/v1/auth/saml/acs`.
 
-These are deliberately not next: route optimization, payroll, procurement, and a model that closes incidents by itself.
+Still out of this product: route optimization, payroll, procurement, and a model that closes incidents by itself. Directions between sites stay in the logistics extension.
 
 <RelatedArticles
   items={[

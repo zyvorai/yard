@@ -34,10 +34,10 @@ func Bootstrap(ctx context.Context, st *store.Store) (*Result, error) {
 
 // Options selects demo seed data or a production first-admin bootstrap.
 type Options struct {
-	Mode               string
-	BootstrapEmail     string
-	BootstrapPassword  string
-	PublicURL          string
+	Mode              string
+	BootstrapEmail    string
+	BootstrapPassword string
+	PublicURL         string
 }
 
 func BootstrapWith(ctx context.Context, st *store.Store, opt Options) (*Result, error) {

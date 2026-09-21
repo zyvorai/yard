@@ -1,0 +1,20 @@
+name: hospital
+templates:
+  - name: Air handler
+    kind: equipment
+    capabilities: [temperature, humidity]
+dashboard:
+  name: Facilities
+  capabilities: [temperature, humidity]
+automations:
+  - name: Warm ward
+    capability: temperature
+    operator: gt
+    threshold: 26
+    action: open_incident
+  - name: Humid
+    capability: humidity
+    operator: gt
+    threshold: 70
+    action: notify
+work_order: Inspect air handler

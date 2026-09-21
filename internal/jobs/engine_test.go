@@ -319,6 +319,61 @@ func TestUnknownAssetRejected(t *testing.T) {
 	}
 }
 
+func TestAnomalyEventAfterTwentySamples(t *testing.T) {
+	st, eng, orgID, assetID := setup(t)
+	ctx := context.Background()
+	for i := 0; i < 20; i++ {
+		v := 10.0
+		if i == 19 {
+			v = 11
+		}
+		_, ok, err := eng.IngestObservation(ctx, orgID, model.IngestObservation{
+			AssetExternalRef: "SIM-TEMP-A", Capability: "pressure", Value: v,
+			ObservedAt: time.Now().UTC().Add(time.Duration(i) * time.Second), DedupeKey: fmt.Sprintf("p%d", i),
+		}, "sim")
+		if err != nil || !ok {
+			t.Fatalf("sample %d: %v", i, err)
+		}
+	}
+	_, ok, err := eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "pressure", Value: 10,
+		ObservedAt: time.Now().UTC().Add(30 * time.Second), DedupeKey: "flat",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	ev, err := st.ListEventsForAsset(ctx, orgID, assetID, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ev {
+		if e.Kind == "telemetry.anomaly" {
+			t.Fatal("in-range value flagged")
+		}
+	}
+	_, ok, err = eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "pressure", Value: 80,
+		ObservedAt: time.Now().UTC().Add(40 * time.Second), DedupeKey: "spike",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatal(err)
+	}
+	ev, err = st.ListEventsForAsset(ctx, orgID, assetID, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, e := range ev {
+		if e.Kind == "telemetry.anomaly" {
+			saw = true
+		}
+	}
+	if !saw {
+		list, _ := st.ListObservations(ctx, orgID, assetID, "pressure", time.Time{}, time.Time{}, 21)
+		t.Fatalf("expected anomaly event, observations %d first %v", len(list), list)
+	}
+}
+
 func TestDebounceAndHysteresis(t *testing.T) {
 	st, eng, orgID, _ := setup(t)
 	ctx := context.Background()
@@ -355,5 +410,65 @@ func TestDebounceAndHysteresis(t *testing.T) {
 	}
 	if len(incs) != 1 {
 		t.Fatalf("want 1 incident, got %d", len(incs))
+	}
+}
+
+func TestFlapCountAfterClear(t *testing.T) {
+	st, eng, orgID, _ := setup(t)
+	ctx := context.Background()
+	if err := st.CreateAutomation(ctx, &model.Automation{
+		OrganizationID: orgID, Name: "Pressure flap", Enabled: true,
+		TriggerKind: "threshold", Capability: "pressure", Operator: "gt", Threshold: 75,
+		Action: "open_incident", Config: `{"hysteresis":10}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
+	ingest := func(v float64, at time.Time, key string) {
+		t.Helper()
+		_, ok, err := eng.IngestObservation(ctx, orgID, model.IngestObservation{
+			AssetExternalRef: "SIM-TEMP-A", Capability: "pressure", Value: v, ObservedAt: at, DedupeKey: key,
+		}, "sim")
+		if err != nil || !ok {
+			t.Fatalf("ingest %s: %v %v", key, err, ok)
+		}
+	}
+	ingest(80, t0, "f1")
+	ingest(82, t0.Add(time.Minute), "f2")
+	incs, err := st.ListIncidents(ctx, orgID, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inc *model.Incident
+	for i := range incs {
+		if incs[i].Title == "Pressure flap on Thermal load" {
+			inc = &incs[i]
+		}
+	}
+	if inc == nil || inc.FlapCount != 0 {
+		t.Fatalf("first trips should not flap: %+v", inc)
+	}
+	ingest(60, t0.Add(2*time.Minute), "f3")
+	ingest(90, t0.Add(3*time.Minute), "f4")
+	ingest(91, t0.Add(4*time.Minute), "f5")
+	got, err := st.GetIncident(ctx, orgID, inc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FlapCount != 1 {
+		t.Fatalf("flap count %d", got.FlapCount)
+	}
+	notes, err := st.IncidentTimeline(ctx, orgID, inc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flaps := 0
+	for _, n := range notes {
+		if n.Kind == "flap" {
+			flaps++
+		}
+	}
+	if flaps != 1 || notes[0].Kind != "opened" {
+		t.Fatalf("timeline %+v", notes)
 	}
 }

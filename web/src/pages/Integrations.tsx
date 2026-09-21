@@ -37,16 +37,19 @@ export default function Integrations() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
 
+  const [catalog, setCatalog] = useState<{ name: string; actions: string[] }[]>([]);
   async function load() {
-    const [c, a, j, me] = await Promise.all([
+    const [c, a, j, me, kinds] = await Promise.all([
       api<Connector[]>("/api/v1/connectors"),
       api<ActionRow[]>("/api/v1/actions"),
       api<JobRow[]>("/api/v1/jobs"),
       api<Me>("/api/v1/auth/me"),
+      api<{ name: string; actions: string[] }[]>("/api/v1/connectors/catalog"),
     ]);
     setRows(c);
     setActions(a);
     setJobs(j);
+    setCatalog(kinds);
     setCanWrite(me.role === "admin" || me.role === "operator");
     setMeID(me.id);
   }
@@ -157,6 +160,10 @@ export default function Integrations() {
         </div>
       </div>
       {msg && <p className="lede" style={{ marginBottom: 12 }}>{msg}</p>}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <h2>Connector kinds</h2>
+        <p className="lede">{catalog.map((k) => k.name).join(" · ")}</p>
+      </div>
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))" }}>
         {rows.map((c) => {
           const actions = parseActions(c.actions);

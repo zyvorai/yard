@@ -426,6 +426,10 @@ export default function Assets() {
               {tab === "Overview" && (
                 <div>
                   <p><Health value={sel.asset.health} /> · stale after {sel.asset.stale_after_sec}s</p>
+                  <ScoreLine id={sel.asset.id} />
+                  {sel.asset.desired_state && sel.asset.desired_state !== "{}" && (
+                    <p className="lede">Desired {sel.asset.desired_state}</p>
+                  )}
                   <div className="row-actions" style={{ margin: "8px 0", justifyContent: "space-between" }}>
                     <p className="lede" style={{ margin: 0 }}>Capabilities</p>
                     <button type="button" className="btn small ghost" onClick={startCapEdit}>Edit</button>
@@ -583,4 +587,17 @@ function IntegrationsPanel({ assetId, externalRef }: { assetId: string; external
       ))}
     </div>
   );
+}
+
+function ScoreLine({ id }: { id: string }) {
+  const [score, setScore] = useState<number | null>(null);
+  useEffect(() => {
+    let stop = false;
+    api<{ score: number }>(`/api/v1/assets/${id}/score`)
+      .then((row) => { if (!stop) setScore(row.score); })
+      .catch(() => { if (!stop) setScore(null); });
+    return () => { stop = true; };
+  }, [id]);
+  if (score == null) return null;
+  return <p className="lede">Health score {score}</p>;
 }

@@ -17,6 +17,8 @@ export default function Settings() {
   const [admin, setAdmin] = useState(false);
   const [days, setDays] = useState("0");
   const [msg, setMsg] = useState("");
+  const [otpSecret, setOtpSecret] = useState("");
+  const [otpCode, setOtpCode] = useState("");
 
   useEffect(() => {
     void (async () => {
@@ -29,6 +31,17 @@ export default function Settings() {
     })();
   }, []);
 
+  async function startOtp() {
+    const row = await api<{ secret: string }>("/api/v1/auth/totp/setup", { method: "POST", body: "{}" });
+    setOtpSecret(row.secret);
+    setMsg("Confirm the code from your authenticator.");
+  }
+  async function confirmOtp(e: FormEvent) {
+    e.preventDefault();
+    await api("/api/v1/auth/totp/confirm", { method: "POST", body: JSON.stringify({ code: otpCode }) });
+    setOtpSecret("");
+    setMsg("Authenticator codes are required at sign-in.");
+  }
   async function saveRetention(e: FormEvent) {
     e.preventDefault();
     setMsg("");
@@ -77,6 +90,20 @@ export default function Settings() {
             {msg && <p className="lede">{msg}</p>}
           </form>
         )}
+        <form className="card" onSubmit={confirmOtp} style={{ marginTop: 16 }}>
+          <h2>Authenticator</h2>
+          <p className="lede">After you confirm a code, sign-in asks for it.</p>
+          {!otpSecret && <button className="btn small" type="button" onClick={startOtp}>Set up</button>}
+          {otpSecret && (
+            <>
+              <p className="lede">Secret: {otpSecret}</p>
+              <label>Code
+                <input value={otpCode} onChange={(e) => setOtpCode(e.target.value)} inputMode="numeric" />
+              </label>
+              <button className="btn small accent" type="submit" style={{ marginTop: 8 }}>Confirm</button>
+            </>
+          )}
+        </form>
       </div>
     </>
   );

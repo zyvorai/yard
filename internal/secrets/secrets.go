@@ -6,10 +6,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ParseKey accepts a 32-byte key as standard base64 or hex.
@@ -38,6 +42,9 @@ func RandomKey() ([]byte, error) {
 
 // LoadOrCreate uses envKey when set, otherwise reads or writes dir/secret.key (mode 0600).
 func LoadOrCreate(dir, envKey string) ([]byte, error) {
+	if strings.TrimSpace(envKey) == "" && os.Getenv("YARD_REQUIRE_CMK") == "1" {
+		return nil, fmt.Errorf("YARD_SECRET_KEY is required when YARD_REQUIRE_CMK=1")
+	}
 	if strings.TrimSpace(envKey) != "" {
 		return ParseKey(envKey)
 	}
@@ -58,6 +65,50 @@ func LoadOrCreate(dir, envKey string) ([]byte, error) {
 	enc := base64.StdEncoding.EncodeToString(key)
 	if err := os.WriteFile(path, []byte(enc+"\n"), 0o600); err != nil {
 		return nil, err
+	}
+	return key, nil
+}
+
+// FetchVaultKey reads a 32-byte key from a Vault KV path. YARD_VAULT_ADDR is
+// the server origin. The token is sent as X-Vault-Token. KV v2 nests the
+// key under data.data; KV v1 uses data.key.
+func FetchVaultKey(addr, token, path string) (string, error) {
+	addr = strings.TrimRight(strings.TrimSpace(addr), "/")
+	path = strings.Trim(strings.TrimSpace(path), "/")
+	if path == "" {
+		path = "secret/data/yard"
+	}
+	if addr == "" || token == "" {
+		return "", fmt.Errorf("vault address and token are required")
+	}
+	req, err := http.NewRequest(http.MethodGet, addr+"/v1/"+path, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("X-Vault-Token", token)
+	client := &http.Client{Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("vault status %d", resp.StatusCode)
+	}
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return "", fmt.Errorf("vault response is not json")
+	}
+	data, _ := payload["data"].(map[string]any)
+	if nested, ok := data["data"].(map[string]any); ok {
+		data = nested
+	}
+	key, _ := data["key"].(string)
+	if strings.TrimSpace(key) == "" {
+		return "", fmt.Errorf("vault response has no key")
 	}
 	return key, nil
 }

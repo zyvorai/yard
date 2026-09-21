@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -255,6 +256,197 @@ CREATE INDEX IF NOT EXISTS dashboards_org ON dashboards(organization_id, updated
   since TEXT NOT NULL,
   PRIMARY KEY (organization_id, automation_id, asset_id)
 );`},
+	{19, `CREATE TABLE IF NOT EXISTS playbooks (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  body TEXT NOT NULL,
+  source_url TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS playbook_runs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  playbook_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  connector_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  requested_by TEXT NOT NULL DEFAULT '',
+  approved_by TEXT NOT NULL DEFAULT '',
+  step_index INTEGER NOT NULL DEFAULT 0,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  job_id TEXT NOT NULL DEFAULT '',
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);`},
+	{20, `ALTER TABLE assets ADD COLUMN desired_state TEXT NOT NULL DEFAULT '{}';`},
+	{21, `CREATE TABLE IF NOT EXISTS permits (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  work_order_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  approved_by TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS permits_wo ON permits(organization_id, work_order_id);`},
+	{22, `ALTER TABLE organizations ADD COLUMN energy_cents_per_kwh INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE assets ADD COLUMN downtime_cents_per_hour INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE assets ADD COLUMN replacement_cost_cents INTEGER NOT NULL DEFAULT 0;`},
+	{23, `CREATE TABLE IF NOT EXISTS geofences (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  latitude REAL NOT NULL,
+  longitude REAL NOT NULL,
+  radius_m REAL NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS geofence_state (
+  organization_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  geofence_id TEXT NOT NULL,
+  inside INTEGER NOT NULL,
+  PRIMARY KEY (organization_id, asset_id, geofence_id)
+);
+ALTER TABLE assets ADD COLUMN floor_x REAL;
+ALTER TABLE assets ADD COLUMN floor_y REAL;
+ALTER TABLE locations ADD COLUMN floorplan TEXT NOT NULL DEFAULT '';`},
+	{24, `CREATE TABLE IF NOT EXISTS tariffs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  start_hour INTEGER NOT NULL,
+  end_hour INTEGER NOT NULL,
+  cents_per_kwh INTEGER NOT NULL
+);
+ALTER TABLE organizations ADD COLUMN carbon_grams_per_kwh INTEGER NOT NULL DEFAULT 0;`},
+	{25, `CREATE TABLE IF NOT EXISTS roles (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  can_write INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (organization_id, name)
+);`},
+	{26, `CREATE TABLE IF NOT EXISTS assistant_previews (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  requested_by TEXT NOT NULL,
+  title TEXT NOT NULL,
+  asset_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);`},
+	{27, `CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  challenge TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  credential_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);`},
+	{28, `ALTER TABLE users ADD COLUMN skills TEXT NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS shifts (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL
+);
+ALTER TABLE work_orders ADD COLUMN required_skill TEXT NOT NULL DEFAULT '';`},
+	{29, `CREATE TABLE IF NOT EXISTS ingest_budget (
+  organization_id TEXT NOT NULL,
+  window_start TEXT NOT NULL,
+  hits INTEGER NOT NULL,
+  PRIMARY KEY (organization_id, window_start)
+);`},
+	{30, `ALTER TABLE events ADD COLUMN region TEXT NOT NULL DEFAULT '';`},
+	{31, `ALTER TABLE incidents ADD COLUMN parent_id TEXT;
+ALTER TABLE incidents ADD COLUMN flap_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE incidents ADD COLUMN flap_armed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE incidents ADD COLUMN acked_at TEXT;
+ALTER TABLE incidents ADD COLUMN ack_due_at TEXT;
+ALTER TABLE incidents ADD COLUMN resolve_due_at TEXT;
+ALTER TABLE organizations ADD COLUMN ack_minutes INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE organizations ADD COLUMN resolve_minutes INTEGER NOT NULL DEFAULT 240;
+CREATE TABLE IF NOT EXISTS oncall (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  ends_at TEXT NOT NULL
+);`},
+	{32, `ALTER TABLE events ADD COLUMN replicated INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN totp_secret TEXT NOT NULL DEFAULT '';`},
+	{33, `ALTER TABLE assets ADD COLUMN nfc_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE assets ADD COLUMN purchased_at TEXT;
+ALTER TABLE assets ADD COLUMN warranty_expires_at TEXT;
+ALTER TABLE assets ADD COLUMN purchase_cents INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE assets ADD COLUMN useful_life_months INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE assets ADD COLUMN deleted_at TEXT;
+CREATE TABLE IF NOT EXISTS install_history (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  parent_asset_id TEXT,
+  note TEXT NOT NULL DEFAULT '',
+  installed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS asset_bom (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  part_number TEXT NOT NULL,
+  name TEXT NOT NULL,
+  quantity REAL NOT NULL DEFAULT 1,
+  unit TEXT NOT NULL DEFAULT 'ea'
+);
+CREATE TABLE IF NOT EXISTS catalogs (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  template_ids TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS work_order_assets (
+  work_order_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  PRIMARY KEY (work_order_id, asset_id)
+);
+CREATE TABLE IF NOT EXISTS time_entries (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  work_order_id TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  minutes INTEGER NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS saved_views (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  query TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS org_members (
+  organization_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'viewer',
+  PRIMARY KEY (organization_id, user_id)
+);
+ALTER TABLE users ADD COLUMN widgets TEXT NOT NULL DEFAULT '["health","incidents","work","activity"]';
+ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en';`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
@@ -811,7 +1003,7 @@ func ts(t *time.Time) any {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-const assetSelect = `id,organization_id,site_id,name,external_ref,kind,status,health,manufacturer,model,serial,latitude,longitude,last_seen_at,stale_after_sec,metadata,created_at,updated_at,parent_asset_id,location_id,template_id`
+const assetSelect = `id,organization_id,site_id,name,external_ref,kind,status,health,manufacturer,model,serial,latitude,longitude,last_seen_at,stale_after_sec,metadata,created_at,updated_at,parent_asset_id,location_id,template_id,desired_state,downtime_cents_per_hour,replacement_cost_cents,floor_x,floor_y,nfc_id,purchased_at,warranty_expires_at,purchase_cents,useful_life_months,deleted_at`
 
 func (s *Store) AssetByRef(ctx context.Context, orgID, ref string) (*model.Asset, error) {
 	return s.getAsset(ctx, `SELECT `+assetSelect+` FROM assets WHERE organization_id=? AND external_ref=?`, orgID, ref)
@@ -834,21 +1026,42 @@ func scanAsset(row scannable) (*model.Asset, error) {
 	var last, created, updated string
 	var lastN sql.NullString
 	var parent, location, template sql.NullString
-	if err := row.Scan(&a.ID, &a.OrganizationID, &site, &a.Name, &a.ExternalRef, &a.Kind, &a.Status, &a.Health, &a.Manufacturer, &a.Model, &a.Serial, &lat, &lng, &lastN, &a.StaleAfterSec, &a.Metadata, &created, &updated, &parent, &location, &template); err != nil {
+	var floorX, floorY sql.NullFloat64
+	var purchased, warranty, deleted sql.NullString
+	if err := row.Scan(&a.ID, &a.OrganizationID, &site, &a.Name, &a.ExternalRef, &a.Kind, &a.Status, &a.Health, &a.Manufacturer, &a.Model, &a.Serial, &lat, &lng, &lastN, &a.StaleAfterSec, &a.Metadata, &created, &updated, &parent, &location, &template, &a.DesiredState, &a.DowntimeCentsPerHour, &a.ReplacementCostCents, &floorX, &floorY, &a.NFCID, &purchased, &warranty, &a.PurchaseCents, &a.UsefulLifeMonths, &deleted); err != nil {
 		return nil, err
 	}
 	a.SiteID = nullS(site)
 	a.ParentAssetID, a.LocationID, a.TemplateID = nullS(parent), nullS(location), nullS(template)
 	a.Latitude, a.Longitude = nullF(lat), nullF(lng)
+	a.FloorX, a.FloorY = nullF(floorX), nullF(floorY)
 	a.LastSeenAt = parseTimePtr(lastN)
+	a.PurchasedAt = parseTimePtr(purchased)
+	a.WarrantyExpiresAt = parseTimePtr(warranty)
+	a.DeletedAt = parseTimePtr(deleted)
 	_ = last
 	a.CreatedAt = parseTime(created)
 	a.UpdatedAt = parseTime(updated)
+	a.BookValueCents = bookValue(a)
 	return &a, nil
 }
 
+func bookValue(a model.Asset) int {
+	if a.PurchaseCents <= 0 || a.UsefulLifeMonths <= 0 || a.PurchasedAt == nil {
+		return a.PurchaseCents
+	}
+	months := int(time.Since(a.PurchasedAt.UTC()).Hours() / (24 * 30))
+	if months < 0 {
+		months = 0
+	}
+	if months >= a.UsefulLifeMonths {
+		return 0
+	}
+	return a.PurchaseCents * (a.UsefulLifeMonths - months) / a.UsefulLifeMonths
+}
+
 func (s *Store) ListAssets(ctx context.Context, orgID, q, kind, health string) ([]model.Asset, error) {
-	query := `SELECT ` + assetSelect + ` FROM assets WHERE organization_id=?`
+	query := `SELECT ` + assetSelect + ` FROM assets WHERE organization_id=? AND (deleted_at IS NULL OR deleted_at='')`
 	args := []any{orgID}
 	if kind != "" {
 		query += ` AND kind=?`
@@ -1103,8 +1316,17 @@ func (s *Store) InsertEvent(ctx context.Context, e *model.Event) (bool, error) {
 	if e.CreatedAt.IsZero() {
 		e.CreatedAt = time.Now().UTC()
 	}
-	_, err := s.exec(ctx, `INSERT INTO events(id,organization_id,asset_id,site_id,kind,severity,title,body,dedupe_key,created_at)
-VALUES(?,?,?,?,?,?,?,?,?,?)`, e.ID, e.OrganizationID, e.AssetID, e.SiteID, e.Kind, e.Severity, e.Title, e.Body, e.DedupeKey, e.CreatedAt.Format(time.RFC3339Nano))
+	region := e.Region
+	if region == "" {
+		region = os.Getenv("YARD_REGION")
+	}
+	e.Region = region
+	replicated := 0
+	if e.Replicated {
+		replicated = 1
+	}
+	_, err := s.exec(ctx, `INSERT INTO events(id,organization_id,asset_id,site_id,kind,severity,title,body,dedupe_key,created_at,region,replicated)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, e.ID, e.OrganizationID, e.AssetID, e.SiteID, e.Kind, e.Severity, e.Title, e.Body, e.DedupeKey, e.CreatedAt.Format(time.RFC3339Nano), region, replicated)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return false, nil
@@ -1141,6 +1363,8 @@ func (s *Store) ListEvents(ctx context.Context, orgID string, limit int) ([]mode
 	return out, rows.Err()
 }
 
+const incidentCols = `id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,COALESCE(runbook,''),opened_at,resolved_at,parent_id,flap_count,flap_armed,acked_at,ack_due_at,resolve_due_at`
+
 func (s *Store) CreateIncident(ctx context.Context, inc *model.Incident) error {
 	if inc.ID == "" {
 		inc.ID = idgen.New("inc")
@@ -1151,37 +1375,65 @@ func (s *Store) CreateIncident(ctx context.Context, inc *model.Incident) error {
 	if inc.Status == "" {
 		inc.Status = "open"
 	}
-	_, err := s.exec(ctx, `INSERT INTO incidents(id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,runbook,opened_at,resolved_at)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, inc.ID, inc.OrganizationID, inc.AssetID, inc.SiteID, inc.Title, inc.Severity, inc.Status, inc.Owner, inc.Summary, inc.Resolution, inc.Runbook, inc.OpenedAt.Format(time.RFC3339Nano), ts(inc.ResolvedAt))
-	return err
+	if err := s.applyIncidentDefaults(ctx, inc); err != nil {
+		return err
+	}
+	var parent any
+	if inc.ParentID != "" {
+		parent = inc.ParentID
+	}
+	armed := 0
+	if inc.FlapArmed {
+		armed = 1
+	}
+	_, err := s.exec(ctx, `INSERT INTO incidents(id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,runbook,opened_at,resolved_at,parent_id,flap_count,flap_armed,acked_at,ack_due_at,resolve_due_at)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, inc.ID, inc.OrganizationID, inc.AssetID, inc.SiteID, inc.Title, inc.Severity, inc.Status, inc.Owner, inc.Summary, inc.Resolution, inc.Runbook, inc.OpenedAt.Format(time.RFC3339Nano), ts(inc.ResolvedAt), parent, inc.FlapCount, armed, ts(inc.AckedAt), ts(inc.AckDueAt), ts(inc.ResolveDueAt))
+	if err != nil {
+		return err
+	}
+	markIncidentSLA(inc)
+	return nil
 }
 
 func (s *Store) UpdateIncident(ctx context.Context, inc *model.Incident) error {
-	_, err := s.exec(ctx, `UPDATE incidents SET title=?, severity=?, status=?, owner=?, summary=?, resolution=?, runbook=?, resolved_at=? WHERE id=? AND organization_id=?`,
-		inc.Title, inc.Severity, inc.Status, inc.Owner, inc.Summary, inc.Resolution, inc.Runbook, ts(inc.ResolvedAt), inc.ID, inc.OrganizationID)
-	return err
+	_, err := s.exec(ctx, `UPDATE incidents SET title=?, severity=?, status=?, owner=?, summary=?, resolution=?, runbook=?, resolved_at=?, acked_at=? WHERE id=? AND organization_id=?`,
+		inc.Title, inc.Severity, inc.Status, inc.Owner, inc.Summary, inc.Resolution, inc.Runbook, ts(inc.ResolvedAt), ts(inc.AckedAt), inc.ID, inc.OrganizationID)
+	if err != nil {
+		return err
+	}
+	markIncidentSLA(inc)
+	return nil
 }
 
 func (s *Store) GetIncident(ctx context.Context, orgID, id string) (*model.Incident, error) {
-	row := s.queryRow(ctx, `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,COALESCE(runbook,''),opened_at,resolved_at FROM incidents WHERE organization_id=? AND id=?`, orgID, id)
+	row := s.queryRow(ctx, `SELECT `+incidentCols+` FROM incidents WHERE organization_id=? AND id=?`, orgID, id)
 	return scanIncident(row)
 }
 
 func scanIncident(row scannable) (*model.Incident, error) {
 	var inc model.Incident
-	var asset, site, resolved sql.NullString
+	var asset, site, resolved, parent, acked, ackDue, resolveDue sql.NullString
 	var opened string
-	if err := row.Scan(&inc.ID, &inc.OrganizationID, &asset, &site, &inc.Title, &inc.Severity, &inc.Status, &inc.Owner, &inc.Summary, &inc.Resolution, &inc.Runbook, &opened, &resolved); err != nil {
+	var armed int
+	if err := row.Scan(&inc.ID, &inc.OrganizationID, &asset, &site, &inc.Title, &inc.Severity, &inc.Status, &inc.Owner, &inc.Summary, &inc.Resolution, &inc.Runbook, &opened, &resolved, &parent, &inc.FlapCount, &armed, &acked, &ackDue, &resolveDue); err != nil {
 		return nil, err
 	}
 	inc.AssetID, inc.SiteID = nullS(asset), nullS(site)
 	inc.OpenedAt = parseTime(opened)
 	inc.ResolvedAt = parseTimePtr(resolved)
+	if parent.Valid {
+		inc.ParentID = parent.String
+	}
+	inc.FlapArmed = armed == 1
+	inc.AckedAt = parseTimePtr(acked)
+	inc.AckDueAt = parseTimePtr(ackDue)
+	inc.ResolveDueAt = parseTimePtr(resolveDue)
+	markIncidentSLA(&inc)
 	return &inc, nil
 }
 
 func (s *Store) ListIncidents(ctx context.Context, orgID, status string) ([]model.Incident, error) {
-	q := `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,COALESCE(runbook,''),opened_at,resolved_at FROM incidents WHERE organization_id=?`
+	q := `SELECT ` + incidentCols + ` FROM incidents WHERE organization_id=?`
 	args := []any{orgID}
 	if status != "" {
 		q += ` AND status=?`
@@ -1208,7 +1460,7 @@ func (s *Store) ListIncidents(ctx context.Context, orgID, status string) ([]mode
 }
 
 func (s *Store) OpenIncidentByDedupe(ctx context.Context, orgID, title string, assetID *string) (*model.Incident, bool, error) {
-	q := `SELECT id,organization_id,asset_id,site_id,title,severity,status,owner,summary,resolution,COALESCE(runbook,''),opened_at,resolved_at FROM incidents WHERE organization_id=? AND title=? AND status IN ('open','ack')`
+	q := `SELECT ` + incidentCols + ` FROM incidents WHERE organization_id=? AND title=? AND status IN ('open','ack')`
 	if assetID != nil {
 		q += ` AND asset_id=?`
 		row := s.queryRow(ctx, q, orgID, title, *assetID)
@@ -1616,8 +1868,8 @@ func (s *Store) DeleteSite(ctx context.Context, orgID, id string) error {
 }
 
 func (s *Store) DeleteAsset(ctx context.Context, orgID, id string) error {
-	_, _ = s.exec(ctx, `DELETE FROM capabilities WHERE asset_id=?`, id)
-	_, err := s.exec(ctx, `DELETE FROM assets WHERE organization_id=? AND id=?`, orgID, id)
+	_, err := s.exec(ctx, `UPDATE assets SET deleted_at=?, updated_at=? WHERE organization_id=? AND id=? AND (deleted_at IS NULL OR deleted_at='')`,
+		time.Now().UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano), orgID, id)
 	return err
 }
 
@@ -1926,22 +2178,55 @@ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, j.ID, j.OrganizationID, j.Kind, j.Status
 
 func (s *Store) ClaimJob(ctx context.Context, worker string) (*Job, error) {
 	now := time.Now().UTC()
-	row := s.queryRow(ctx, `SELECT id FROM jobs WHERE status='queued' AND run_after<=? ORDER BY created_at LIMIT 1`, now.Format(time.RFC3339Nano))
-	var id string
-	if err := row.Scan(&id); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
+	nowS := now.Format(time.RFC3339Nano)
+	if s.Dialect == "postgres" {
+		return s.claimJobPostgres(ctx, worker, nowS)
 	}
-	res, err := s.exec(ctx, `UPDATE jobs SET status='running', attempts=attempts+1, locked_by=?, locked_at=?, updated_at=? WHERE id=? AND status='queued'`,
-		worker, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), id)
+	for try := 0; try < 5; try++ {
+		row := s.queryRow(ctx, `SELECT id FROM jobs WHERE status='queued' AND run_after<=? ORDER BY created_at LIMIT 1`, nowS)
+		var id string
+		if err := row.Scan(&id); err != nil {
+			if err == sql.ErrNoRows {
+				return nil, nil
+			}
+			return nil, err
+		}
+		res, err := s.exec(ctx, `UPDATE jobs SET status='running', attempts=attempts+1, locked_by=?, locked_at=?, updated_at=? WHERE id=? AND status='queued'`,
+			worker, nowS, nowS, id)
+		if err != nil {
+			return nil, err
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			continue
+		}
+		return s.getJob(ctx, id)
+	}
+	return nil, nil
+}
+
+func (s *Store) claimJobPostgres(ctx context.Context, worker, nowS string) (*Job, error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	defer tx.Rollback()
+	q := s.rebind(`WITH picked AS (
+  SELECT id FROM jobs WHERE status='queued' AND run_after<=? ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
+)
+UPDATE jobs SET status='running', attempts=attempts+1, locked_by=?, locked_at=?, updated_at=?
+WHERE id IN (SELECT id FROM picked)
+RETURNING id`)
+	var id string
+	err = tx.QueryRowContext(ctx, q, nowS, worker, nowS, nowS).Scan(&id)
+	if err == sql.ErrNoRows {
 		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
 	}
 	return s.getJob(ctx, id)
 }
@@ -2061,6 +2346,7 @@ type Location struct {
 	ParentID       *string   `json:"parent_id,omitempty"`
 	Name           string    `json:"name"`
 	Kind           string    `json:"kind"`
+	Floorplan      string    `json:"floorplan,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -2080,7 +2366,7 @@ func (s *Store) CreateLocation(ctx context.Context, loc *Location) error {
 }
 
 func (s *Store) ListLocations(ctx context.Context, orgID string) ([]Location, error) {
-	rows, err := s.query(ctx, `SELECT id,organization_id,parent_id,name,kind,created_at FROM locations WHERE organization_id=? ORDER BY name`, orgID)
+	rows, err := s.query(ctx, `SELECT id,organization_id,parent_id,name,kind,floorplan,created_at FROM locations WHERE organization_id=? ORDER BY name`, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -2090,7 +2376,7 @@ func (s *Store) ListLocations(ctx context.Context, orgID string) ([]Location, er
 		var loc Location
 		var parent sql.NullString
 		var created string
-		if err := rows.Scan(&loc.ID, &loc.OrganizationID, &parent, &loc.Name, &loc.Kind, &created); err != nil {
+		if err := rows.Scan(&loc.ID, &loc.OrganizationID, &parent, &loc.Name, &loc.Kind, &loc.Floorplan, &created); err != nil {
 			return nil, err
 		}
 		loc.ParentID = nullS(parent)

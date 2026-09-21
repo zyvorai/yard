@@ -5,6 +5,8 @@ export default function Login({ onIn }: { onIn: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [demo, setDemo] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [needOtp, setNeedOtp] = useState(false);
   const [err, setErr] = useState("");
   const [forgot, setForgot] = useState(false);
   const [resetSent, setResetSent] = useState(false);
@@ -28,11 +30,17 @@ export default function Login({ onIn }: { onIn: () => void }) {
     try {
       const res = await api<{ token: string }>("/api/v1/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, otp }),
       });
       setToken(res.token);
       onIn();
-    } catch {
+    } catch (ex) {
+      const text = ex instanceof Error ? ex.message : "";
+      if (text.includes("otp")) {
+        setNeedOtp(true);
+        setErr("Enter the authenticator code.");
+        return;
+      }
       setErr("Those credentials were not accepted.");
     }
   }
@@ -89,6 +97,12 @@ export default function Login({ onIn }: { onIn: () => void }) {
           <label htmlFor="password">Password</label>
           <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
         </div>
+        {needOtp && (
+          <div className="field">
+            <label htmlFor="otp">Authenticator code</label>
+            <input id="otp" value={otp} onChange={(e) => setOtp(e.target.value)} inputMode="numeric" autoComplete="one-time-code" />
+          </div>
+        )}
         {err && <p style={{ color: "var(--bad)" }}>{err}</p>}
         <button className="btn accent" type="submit" style={{ width: "100%", marginTop: 8 }}>
           Continue

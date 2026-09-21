@@ -18,6 +18,7 @@ import (
 	"github.com/zyvorai/yard/internal/egress"
 	"github.com/zyvorai/yard/internal/maintain"
 	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/score"
 	"github.com/zyvorai/yard/internal/sse"
 	"github.com/zyvorai/yard/internal/store"
 )
@@ -213,7 +214,10 @@ func (e *Engine) RunMaintenance(ctx context.Context, now time.Time) error {
 		}
 		e.publish(sched.OrganizationID, "workorder.created", child)
 	}
-	return nil
+	if err := e.SyncPlaybooks(ctx); err != nil {
+		return err
+	}
+	return e.ReplicateEvents(ctx)
 }
 func (e *Engine) StartActionSweeper(ctx context.Context, every time.Duration) {
 	if every <= 0 {
@@ -298,6 +302,12 @@ func (e *Engine) IngestObservation(ctx context.Context, orgID string, in model.I
 	if err := e.applyAutomations(ctx, orgID, asset, obs); err != nil && e.Log != nil {
 		e.Log.Error("automation", "err", err)
 	}
+	if kind == "number" {
+		e.noteAnomaly(ctx, orgID, asset, obs)
+	}
+	if in.Latitude != nil && in.Longitude != nil {
+		e.noteGeofence(ctx, orgID, asset, *in.Latitude, *in.Longitude)
+	}
 	return obs, true, nil
 }
 
@@ -327,8 +337,19 @@ func classifyObservation(in model.IngestObservation) (kind string, num float64, 
 			text = text[:500]
 		}
 		return kind, 0, text, nil
+	case "histogram":
+		text = strings.TrimSpace(in.ValueText)
+		var body struct {
+			Count   float64   `json:"count"`
+			Sum     float64   `json:"sum"`
+			Buckets []float64 `json:"buckets"`
+		}
+		if json.Unmarshal([]byte(text), &body) != nil || body.Buckets == nil {
+			return "", 0, "", fmt.Errorf("histogram observation needs count, sum, and buckets")
+		}
+		return kind, body.Sum, text, nil
 	default:
-		return "", 0, "", fmt.Errorf("value_kind must be number, bool, or text")
+		return "", 0, "", fmt.Errorf("value_kind must be number, bool, text, or histogram")
 	}
 }
 
@@ -415,6 +436,10 @@ func (e *Engine) applyAutomations(ctx context.Context, orgID string, asset *mode
 		if !hit {
 			if a.TriggerKind != "threshold" || clearHold(a, obs.Value) {
 				_ = e.Store.ClearAutomationHold(ctx, orgID, a.ID, asset.ID)
+				if a.Action == "open_incident" {
+					title := fmt.Sprintf("%s on %s", a.Name, asset.Name)
+					_ = e.Store.ArmIncidentFlap(ctx, orgID, title, asset.ID)
+				}
 			}
 			continue
 		}
@@ -511,6 +536,31 @@ func (e *Engine) debounceReady(ctx context.Context, orgID, assetID string, a mod
 		return false, nil
 	}
 	return true, e.Store.ClearAutomationHold(ctx, orgID, a.ID, assetID)
+}
+
+func (e *Engine) noteAnomaly(ctx context.Context, orgID string, asset *model.Asset, obs *model.Observation) {
+	list, err := e.Store.ListObservations(ctx, orgID, obs.AssetID, obs.Capability, time.Time{}, time.Time{}, 21)
+	if err != nil || len(list) < 21 {
+		return
+	}
+	prior := make([]float64, 0, 20)
+	for _, row := range list[1:] {
+		if row.ValueKind != "" && row.ValueKind != "number" {
+			return
+		}
+		prior = append(prior, row.Value)
+	}
+	if !score.Outlier(prior, obs.Value) {
+		return
+	}
+	_, _ = e.Store.InsertEvent(ctx, &model.Event{
+		OrganizationID: orgID,
+		AssetID:        &asset.ID,
+		Kind:           "telemetry.anomaly",
+		Severity:       "warning",
+		Title:          obs.Capability + " is outside its recent range",
+		Body:           asset.Name,
+	})
 }
 
 func clearHold(a model.Automation, value float64) bool {
@@ -663,9 +713,18 @@ func (e *Engine) openIncident(ctx context.Context, orgID string, asset *model.As
 		return err
 	}
 	if !need {
+		noted, err := e.Store.NoteIncidentFlap(ctx, orgID, existing.ID)
+		if err != nil {
+			return err
+		}
+		if noted {
+			_, _ = e.Store.InsertEvent(ctx, &model.Event{
+				OrganizationID: orgID, AssetID: &asset.ID, Kind: "incident.flap", Severity: existing.Severity,
+				Title: "Condition tripped again", Body: existing.ID,
+			})
+		}
 		return nil
 	}
-	_ = existing
 	sev, runbook := e.Store.ResolveSeverity(ctx, orgID, obs.Capability, a.Name)
 	if (obs.Value >= 90 || asset.Health == "critical") && sev != "critical" {
 		sev = "critical"

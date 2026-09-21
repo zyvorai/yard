@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"sync"
@@ -24,6 +25,9 @@ func roleOK(u *model.User, write bool) bool {
 
 func (s *Server) requireWrite(w http.ResponseWriter, u *model.User) bool {
 	if roleOK(u, true) {
+		return true
+	}
+	if ok, err := s.Store.RoleCanWrite(context.Background(), u.OrganizationID, u.Role); err == nil && ok {
 		return true
 	}
 	writeJSON(w, 403, map[string]string{"error": "forbidden: viewer cannot mutate"})
@@ -89,15 +93,15 @@ func (l *ingestLimiter) allow(key string) bool {
 }
 
 type metrics struct {
-	mu            sync.Mutex
-	ingestOK      int64
-	ingestReject  int64
-	loginOK       int64
-	loginFail     int64
-	loginLockout  int64
-	secretRotate  int64
-	staleRuns     int64
-	version       string
+	mu           sync.Mutex
+	ingestOK     int64
+	ingestReject int64
+	loginOK      int64
+	loginFail    int64
+	loginLockout int64
+	secretRotate int64
+	staleRuns    int64
+	version      string
 }
 
 func (m *metrics) inc(field *int64) {

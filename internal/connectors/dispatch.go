@@ -42,20 +42,12 @@ func (d *Dispatcher) Execute(ctx context.Context, orgID string, conn *model.Conn
 	if conn == nil {
 		return "failed", "", fmt.Errorf("connector required")
 	}
-	switch conn.Kind {
-	case "device-agent":
-		return d.deviceAgent(ctx, orgID, conn, action, payload)
-	case "http", "simulator":
-		return "recorded", "Ingest-only connector; use HTTP ingest endpoints.", nil
-	case "nodra":
-		return d.nodra(ctx, orgID, conn, action, payload)
-	case "fleet":
-		return d.fleet(ctx, orgID, conn, action, payload)
-	case "ota":
-		return d.ota(ctx, orgID, conn, action, payload)
-	default:
-		return "unsupported", fmt.Sprintf("unknown connector kind %q", conn.Kind), nil
+	for _, kind := range kinds {
+		if kind.Name == conn.Kind {
+			return kind.exec(d, ctx, orgID, conn, action, payload)
+		}
 	}
+	return "unsupported", fmt.Sprintf("unknown connector kind %q", conn.Kind), nil
 }
 
 func (d *Dispatcher) deviceAgent(ctx context.Context, orgID string, conn *model.Connector, action, payload string) (string, string, error) {

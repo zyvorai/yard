@@ -29,6 +29,7 @@ import (
 	"github.com/zyvorai/yard/internal/secrets"
 	"github.com/zyvorai/yard/internal/sse"
 	"github.com/zyvorai/yard/internal/store"
+	"github.com/zyvorai/yard/internal/totp"
 	"github.com/zyvorai/yard/internal/version"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -97,41 +98,81 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/metrics", s.metricsHandler)
 	mux.HandleFunc("/api/v1/meta", s.meta)
 	mux.HandleFunc("/api/v1/auth/login", s.login)
+	mux.HandleFunc("/api/v1/peers/events", s.peerEvents)
+	mux.HandleFunc("/api/v1/auth/totp/setup", s.withUser(s.totpSetup))
+	mux.HandleFunc("/api/v1/auth/totp/confirm", s.withUser(s.totpConfirm))
 	mux.HandleFunc("/api/v1/auth/logout", s.withUser(s.logout))
 	mux.HandleFunc("/api/v1/auth/sessions", s.withUser(s.sessions))
 	mux.HandleFunc("/api/v1/auth/sessions/", s.withUser(s.sessionItem))
 	mux.HandleFunc("/api/v1/auth/oidc", s.oidcConfig)
+	mux.HandleFunc("/api/v1/auth/oidc/start", s.oidcStart)
+	mux.HandleFunc("/api/v1/auth/oidc/callback", s.oidcCallback)
+	mux.HandleFunc("/api/v1/auth/saml/acs", s.samlACS)
+	mux.HandleFunc("/api/v1/scim/v2/Users", s.scimUsers)
+	mux.HandleFunc("/api/v1/scim/v2/Users/", s.scimUsers)
+	mux.HandleFunc("/api/v1/auth/webauthn/login/start", s.webauthnLoginStart)
+	mux.HandleFunc("/api/v1/auth/webauthn/login/finish", s.webauthnLoginFinish)
 	mux.HandleFunc("/api/v1/auth/me", s.withUser(s.me))
+	mux.HandleFunc("/api/v1/me/prefs", s.withUser(s.mePrefs))
+	mux.HandleFunc("/api/v1/i18n", s.i18n)
+	mux.HandleFunc("/api/v1/orgs", s.withUser(s.orgs))
+	mux.HandleFunc("/api/v1/orgs/switch", s.withUser(s.switchOrg))
+	mux.HandleFunc("/api/v1/catalogs", s.withUser(s.catalogs))
+	mux.HandleFunc("/api/v1/saved-views", s.withUser(s.savedViews))
+	mux.HandleFunc("/api/v1/schedules", s.withUser(s.schedules))
+	mux.HandleFunc("/api/v1/telemetry/export", s.withUser(s.telemetryExport))
 	mux.HandleFunc("/api/v1/auth/accept-invite", s.acceptInvite)
 	mux.HandleFunc("/api/v1/auth/request-reset", s.requestReset)
 	mux.HandleFunc("/api/v1/auth/reset", s.resetPassword)
 	mux.HandleFunc("/api/v1/admin/users", s.withUser(s.adminUsers))
 	mux.HandleFunc("/api/v1/api-keys", s.withUser(s.apiKeys))
 	mux.HandleFunc("/api/v1/overview", s.withUser(s.overview))
+	mux.HandleFunc("/api/v1/geofences", s.withUser(s.geofences))
+	mux.HandleFunc("/api/v1/roles", s.withUser(s.roles))
+	mux.HandleFunc("/api/v1/shifts", s.withUser(s.shifts))
+	mux.HandleFunc("/api/v1/assistant/preview", s.withUser(s.assistantPreview))
+	mux.HandleFunc("/api/v1/assistant/preview/", s.withUser(s.assistantApprove))
+	mux.HandleFunc("/api/v1/auth/webauthn/register/start", s.withUser(s.webauthnRegisterStart))
+	mux.HandleFunc("/api/v1/auth/webauthn/register/finish", s.withUser(s.webauthnRegisterFinish))
+	mux.HandleFunc("/api/v1/reports/cost", s.withUser(s.costReport))
 	mux.HandleFunc("/api/v1/org", s.withUser(s.org))
+	mux.HandleFunc("/api/v1/packs/", s.withUser(s.importPack))
 	mux.HandleFunc("/api/v1/sites", s.withUser(s.sites))
 	mux.HandleFunc("/api/v1/sites/", s.withUser(s.siteItem))
 	mux.HandleFunc("/api/v1/assets", s.withUser(s.assets))
 	mux.HandleFunc("/api/v1/assets/lookup", s.withUser(s.assetLookup))
 	mux.HandleFunc("/api/v1/assets/", s.withUser(s.assetItem))
+	mux.HandleFunc("/api/v1/telemetry/query", s.withUser(s.telemetryQuery))
 	mux.HandleFunc("/api/v1/telemetry", s.withUser(s.telemetry))
+	mux.HandleFunc("/api/v1/compliance/export", s.withUser(s.complianceExport))
 	mux.HandleFunc("/api/v1/events", s.withUser(s.events))
 	mux.HandleFunc("/api/v1/incidents", s.withUser(s.incidents))
 	mux.HandleFunc("/api/v1/incidents/", s.withUser(s.incidentItem))
+	mux.HandleFunc("/api/v1/oncall", s.withUser(s.oncall))
 	mux.HandleFunc("/api/v1/work-orders", s.withUser(s.workOrders))
 	mux.HandleFunc("/api/v1/work-orders/", s.withUser(s.workOrderItem))
 	mux.HandleFunc("/api/v1/connectors", s.withUser(s.connectors))
+	mux.HandleFunc("/api/v1/connectors/catalog", s.withUser(s.connectorCatalog))
+	mux.HandleFunc("/api/v1/connectors/marketplace", s.withUser(s.marketplace))
+	mux.HandleFunc("/api/v1/connectors/marketplace/", s.withUser(s.marketplace))
 	mux.HandleFunc("/api/v1/connectors/", s.withUser(s.putConnectorSecret))
 	mux.HandleFunc("/api/v1/actions", s.withUser(s.actions))
 	mux.HandleFunc("/api/v1/jobs", s.withUser(s.jobs))
 	mux.HandleFunc("/api/v1/jobs/", s.withUser(s.jobItem))
 	mux.HandleFunc("/api/v1/automations", s.withUser(s.automations))
+	mux.HandleFunc("/api/v1/playbooks", s.withUser(s.playbooks))
+	mux.HandleFunc("/api/v1/playbooks/", s.withUser(s.playbookItem))
+	mux.HandleFunc("/api/v1/playbook-runs/", s.withUser(s.playbookRunItem))
+	mux.HandleFunc("/api/v1/search/answer", s.withUser(s.searchAnswer))
+	mux.HandleFunc("/api/v1/search", s.withUser(s.search))
 	mux.HandleFunc("/api/v1/severity-policies", s.withUser(s.severityPolicies))
 	mux.HandleFunc("/api/v1/severity-policies/", s.withUser(s.severityPolicyItem))
+	mux.HandleFunc("/api/v1/audit/export", s.withUser(s.auditExport))
 	mux.HandleFunc("/api/v1/audit", s.withUser(s.audit))
 	mux.HandleFunc("/api/v1/stream/ticket", s.withUser(s.streamTicket))
 	mux.HandleFunc("/api/v1/stream", s.stream)
 	mux.HandleFunc("/api/v1/locations", s.withUser(s.locations))
+	mux.HandleFunc("/api/v1/locations/", s.withUser(s.locationItem))
 	mux.HandleFunc("/api/v1/asset-templates", s.withUser(s.assetTemplates))
 	mux.HandleFunc("/api/v1/asset-links", s.withUser(s.assetLinks))
 	mux.HandleFunc("/api/v1/onboarding", s.withUser(s.onboarding))
@@ -280,6 +321,18 @@ func (s *Server) withConnector(fn func(http.ResponseWriter, *http.Request, *mode
 			return
 		}
 		_ = s.Store.TouchConnector(r.Context(), c.ID)
+		if strings.Contains(r.URL.Path, "/api/v1/ingest/") {
+			ok, err := s.Store.TakeIngestBudget(r.Context(), c.OrganizationID, 120, time.Now())
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if !ok {
+				s.metrics.inc(&s.metrics.ingestReject)
+				writeJSON(w, 429, map[string]string{"error": "ingest rate limit"})
+				return
+			}
+		}
 		fn(w, r, c)
 	}
 }
@@ -300,7 +353,7 @@ func (s *Server) oidcConfig(w http.ResponseWriter, r *http.Request) {
 	if enabled {
 		out["authorize_url"] = strings.TrimRight(issuer, "/") + "/authorize"
 		out["token_url"] = strings.TrimRight(issuer, "/") + "/token"
-		out["note"] = "OIDC discovery configured; full browser callback flow lands in a follow-up (env: YARD_OIDC_ISSUER, YARD_OIDC_CLIENT_ID, YARD_OIDC_CLIENT_SECRET)."
+		out["note"] = "Start login at GET /api/v1/auth/oidc/start. The callback exchanges the code and issues a session."
 	}
 	writeJSON(w, 200, out)
 }
@@ -313,6 +366,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		OTP      string `json:"otp"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "invalid json"})
@@ -338,6 +392,17 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Store.ClearLoginFailures(r.Context(), key)
+	secret, err := s.Store.UserTOTP(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "otp"})
+		return
+	}
+	if secret != "" && !strings.HasPrefix(secret, "pending:") && !totp.Verify(secret, in.OTP, time.Now()) {
+		s.metrics.inc(&s.metrics.loginFail)
+		_ = s.Store.RecordLoginFailure(r.Context(), key, time.Now().Add(-15*time.Minute))
+		writeJSON(w, 401, map[string]string{"error": "otp required"})
+		return
+	}
 	sess, err := s.Store.CreateSession(r.Context(), u.ID, 12*time.Hour)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": "session"})
@@ -749,6 +814,20 @@ func (s *Server) siteItem(w http.ResponseWriter, r *http.Request, u *model.User)
 func (s *Server) assets(w http.ResponseWriter, r *http.Request, u *model.User) {
 	switch r.Method {
 	case http.MethodGet:
+		if bbox := r.URL.Query().Get("bbox"); bbox != "" {
+			minLng, minLat, maxLng, maxLat, ok := store.ParseBBox(bbox)
+			if !ok {
+				writeJSON(w, 400, map[string]string{"error": "bbox must be minLng,minLat,maxLng,maxLat"})
+				return
+			}
+			list, err := s.Store.ListAssetsInBBox(r.Context(), u.OrganizationID, minLng, minLat, maxLng, maxLat)
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, list)
+			return
+		}
 		list, err := s.Store.ListAssets(r.Context(), u.OrganizationID, r.URL.Query().Get("q"), r.URL.Query().Get("kind"), r.URL.Query().Get("health"))
 		if err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
@@ -809,8 +888,28 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		s.assetLabel(w, a)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "twin" && r.Method == http.MethodGet {
+		s.assetTwin(w, r, u, a)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "blast-radius" && r.Method == http.MethodGet {
+		s.assetBlast(w, r, u, a)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "score" && r.Method == http.MethodGet {
+		s.assetScore(w, r, u, a)
+		return
+	}
 	if len(parts) >= 2 && parts[1] == "attachments" {
 		s.assetAttachments(w, r, u, a, parts)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "bom" {
+		s.assetBOM(w, r, u, a)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "installs" && r.Method == http.MethodGet {
+		s.assetInstalls(w, r, u, a)
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodGet {
@@ -825,11 +924,12 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		if !s.requireWrite(w, u) {
 			return
 		}
-		var in model.Asset
-		if err := readJSON(r, &in); err != nil {
+		rawIn, desired, downtime, replacement, floorX, floorY, err := readAssetPatch(r)
+		if err != nil {
 			writeJSON(w, 400, map[string]string{"error": "invalid json"})
 			return
 		}
+		in := rawIn
 		if in.Name != "" {
 			a.Name = in.Name
 		}
@@ -868,6 +968,10 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		}
 		if in.ParentAssetID != nil || in.LocationID != nil || in.TemplateID != nil {
 			parent, location, template := a.ParentAssetID, a.LocationID, a.TemplateID
+			prevParent := ""
+			if a.ParentAssetID != nil {
+				prevParent = *a.ParentAssetID
+			}
 			if in.ParentAssetID != nil {
 				parent = in.ParentAssetID
 			}
@@ -887,6 +991,13 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 				writeJSON(w, 500, map[string]string{"error": err.Error()})
 				return
 			}
+			nextParent := ""
+			if parent != nil {
+				nextParent = *parent
+			}
+			if in.ParentAssetID != nil && nextParent != prevParent {
+				_ = s.Store.RecordInstall(r.Context(), u.OrganizationID, a.ID, parent, "parent changed")
+			}
 			a.ParentAssetID, a.LocationID, a.TemplateID = parent, location, template
 		}
 		if !validLatLng(a.Latitude, a.Longitude) {
@@ -896,6 +1007,57 @@ func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User
 		if err := s.Store.UpsertAsset(r.Context(), a); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})
 			return
+		}
+		if desired != nil || downtime != nil || replacement != nil {
+			state := a.DesiredState
+			if desired != nil {
+				state = *desired
+			}
+			if err := s.Store.SetAssetDesired(r.Context(), u.OrganizationID, a.ID, state, downtime, replacement); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			a.DesiredState = state
+			if downtime != nil {
+				a.DowntimeCentsPerHour = *downtime
+			}
+			if replacement != nil {
+				a.ReplacementCostCents = *replacement
+			}
+		}
+		if floorX != nil || floorY != nil {
+			if err := s.Store.SetAssetFloor(r.Context(), u.OrganizationID, a.ID, floorX, floorY); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if in.NFCID != "" {
+			if err := s.Store.SetAssetNFC(r.Context(), u.OrganizationID, a.ID, in.NFCID); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			a.NFCID = in.NFCID
+		}
+		if in.PurchasedAt != nil || in.WarrantyExpiresAt != nil || in.PurchaseCents > 0 || in.UsefulLifeMonths > 0 {
+			purchased, warranty := a.PurchasedAt, a.WarrantyExpiresAt
+			cents, months := a.PurchaseCents, a.UsefulLifeMonths
+			if in.PurchasedAt != nil {
+				purchased = in.PurchasedAt
+			}
+			if in.WarrantyExpiresAt != nil {
+				warranty = in.WarrantyExpiresAt
+			}
+			if in.PurchaseCents > 0 {
+				cents = in.PurchaseCents
+			}
+			if in.UsefulLifeMonths > 0 {
+				months = in.UsefulLifeMonths
+			}
+			if err := s.Store.SetAssetWarranty(r.Context(), u.OrganizationID, a.ID, purchased, warranty, cents, months); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			a.PurchasedAt, a.WarrantyExpiresAt, a.PurchaseCents, a.UsefulLifeMonths = purchased, warranty, cents, months
 		}
 		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.update", a.ID, a.Name)
 		s.Hub.Publish(u.OrganizationID, "asset.updated", a)
@@ -1330,6 +1492,12 @@ func (s *Server) incidents(w http.ResponseWriter, r *http.Request, u *model.User
 			return
 		}
 		inc.OrganizationID = u.OrganizationID
+		if inc.ParentID != "" {
+			if _, err := s.Store.GetIncident(r.Context(), u.OrganizationID, inc.ParentID); err != nil {
+				writeJSON(w, 400, map[string]string{"error": "parent not found"})
+				return
+			}
+		}
 		if inc.Severity == "" || inc.Runbook == "" {
 			sev, rb := s.Store.ResolveSeverity(r.Context(), u.OrganizationID, "", "")
 			if inc.Severity == "" {
@@ -1360,6 +1528,15 @@ func (s *Server) incidentItem(w http.ResponseWriter, r *http.Request, u *model.U
 		writeJSON(w, 404, map[string]string{"error": "not found"})
 		return
 	}
+	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/timeline") {
+		notes, err := s.Store.IncidentTimeline(r.Context(), u.OrganizationID, inc.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, notes)
+		return
+	}
 	if r.Method == http.MethodGet && !strings.Contains(r.URL.Path, "/resolve") {
 		writeJSON(w, 200, inc)
 		return
@@ -1372,6 +1549,10 @@ func (s *Server) incidentItem(w http.ResponseWriter, r *http.Request, u *model.U
 		_ = readJSON(r, &in)
 		if v := in["status"]; v != "" {
 			inc.Status = v
+		}
+		if inc.Status == "ack" && inc.AckedAt == nil {
+			now := time.Now().UTC()
+			inc.AckedAt = &now
 		}
 		if v := in["owner"]; v != "" {
 			inc.Owner = v
@@ -1454,11 +1635,18 @@ func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.
 		return
 	}
 	if hasExtra {
-		if !strings.HasPrefix(extra, "lines") {
-			writeJSON(w, 404, map[string]string{"error": "not found"})
+		if strings.HasPrefix(extra, "lines") {
+			s.workOrderLines(w, r, u, wo, extra)
 			return
 		}
-		s.workOrderLines(w, r, u, wo, extra)
+		if strings.HasPrefix(extra, "permits") {
+			s.workOrderPermits(w, r, u, wo, extra)
+			return
+		}
+		if s.workOrderExtras(w, r, u, wo, extra) {
+			return
+		}
+		writeJSON(w, 404, map[string]string{"error": "not found"})
 		return
 	}
 	if r.Method == http.MethodGet {
@@ -1505,6 +1693,32 @@ func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.
 				wo.SLADueAt = &t
 			} else if t, err := time.Parse("2006-01-02", v); err == nil {
 				wo.SLADueAt = &t
+			}
+		}
+		skill, _ := s.Store.WorkOrderSkill(r.Context(), u.OrganizationID, wo.ID)
+		if v, ok := in["required_skill"]; ok {
+			skill = v
+			if err := s.Store.SetWorkOrderSkill(r.Context(), u.OrganizationID, wo.ID, v); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if wo.Assignee != "" && skill != "" {
+			ok, err := s.Store.AssigneeHasSkill(r.Context(), u.OrganizationID, wo.Assignee, skill)
+			if err != nil || !ok {
+				writeJSON(w, 409, map[string]string{"error": "assignee lacks the required skill"})
+				return
+			}
+		}
+		if wo.Status == "done" && needsPermit(wo) {
+			ok, err := s.Store.HasApprovedPermit(r.Context(), u.OrganizationID, wo.ID)
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if !ok {
+				writeJSON(w, 409, map[string]string{"error": "an approved permit is required"})
+				return
 			}
 		}
 		if err := s.Store.UpdateWorkOrder(r.Context(), wo); err != nil {

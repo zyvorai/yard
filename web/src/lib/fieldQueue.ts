@@ -5,6 +5,8 @@ export type FieldOrder = {
   notes: string;
   kind?: string;
   priority?: string;
+  checklist?: string;
+  asset_id?: string;
 };
 
 export type FieldChange = {

@@ -10,7 +10,7 @@ const RANGE_PRESETS: { label: string; hours: number }[] = [
 ];
 
 function showValue(p: { value: number; unit: string; value_kind?: string; value_text?: string }) {
-  if (p.value_kind === "text" || p.value_kind === "bool") return p.value_text || "";
+  if (p.value_kind === "text" || p.value_kind === "bool" || p.value_kind === "histogram") return p.value_text || "";
   return `${p.value.toFixed(2)} ${p.unit}`.trim();
 }
 

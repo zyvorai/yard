@@ -1,3 +1,6 @@
+{{- if and (gt (int .Values.replicaCount) 1) (not (or (hasPrefix "postgres://" .Values.databaseUrl) (hasPrefix "postgresql://" .Values.databaseUrl))) }}
+{{- fail "replicaCount greater than 1 requires a postgres:// database URL" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

@@ -15,6 +15,8 @@ import WorkOrders from "./pages/WorkOrders";
 import Field from "./pages/Field";
 import Incidents from "./pages/Incidents";
 import Automations from "./pages/Automations";
+import Playbooks from "./pages/Playbooks";
+import Cost from "./pages/Cost";
 import Integrations from "./pages/Integrations";
 import Admin from "./pages/Admin";
 import Diagnostics from "./pages/Diagnostics";
@@ -47,6 +49,8 @@ export default function App() {
           <Route path="/field" element={<Field />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/automations" element={<Automations />} />
+          <Route path="/playbooks" element={<Playbooks />} />
+          <Route path="/cost" element={<Cost />} />
           <Route path="/integrations" element={<Integrations />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/diagnostics" element={<Diagnostics />} />

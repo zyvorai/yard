@@ -1,0 +1,20 @@
+name: utilities
+templates:
+  - name: Feeder
+    kind: equipment
+    capabilities: [voltage, energy_kwh]
+dashboard:
+  name: Feeders
+  capabilities: [voltage, energy_kwh]
+automations:
+  - name: Low voltage
+    capability: voltage
+    operator: lt
+    threshold: 110
+    action: open_incident
+  - name: High energy
+    capability: energy_kwh
+    operator: gt
+    threshold: 500
+    action: notify
+work_order: Inspect feeder
