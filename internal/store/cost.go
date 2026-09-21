@@ -51,7 +51,7 @@ func (s *Store) CostReport(ctx context.Context, orgID string, now time.Time) (Co
 		kwh float64
 	}
 	var samples []sample
-	obsRows, err := s.query(ctx, `SELECT observed_at, value FROM observations WHERE organization_id=? AND capability='energy_kwh' AND value_kind='number'`, orgID)
+	obsRows, err := s.query(ctx, `SELECT observed_at, value FROM observations WHERE organization_id=? AND capability='energy_kwh' AND value_kind IN ('number','integer','counter')`, orgID)
 	if err != nil {
 		return out, err
 	}

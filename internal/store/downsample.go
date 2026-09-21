@@ -58,7 +58,7 @@ func (s *Store) DownsampleBefore(ctx context.Context, cutoff time.Time) (int64, 
 		// time_bucket needs timestamptz; YARD_TIMESCALE converts observed_at.
 		q = `SELECT organization_id, asset_id, capability, to_char(time_bucket('1 hour', observed_at), 'YYYY-MM-DD"T"HH24'), COUNT(*), MIN(value), MAX(value), SUM(value), MAX(unit)
 FROM observations
-WHERE value_kind='number' AND observed_at < ?
+WHERE value_kind IN ('number','integer','counter') AND observed_at < ?
 GROUP BY organization_id, asset_id, capability, time_bucket('1 hour', observed_at)`
 	} else {
 		hourExpr := `substr(observed_at,1,13)`
@@ -67,7 +67,7 @@ GROUP BY organization_id, asset_id, capability, time_bucket('1 hour', observed_a
 		}
 		q = fmt.Sprintf(`SELECT organization_id, asset_id, capability, %s, COUNT(*), MIN(value), MAX(value), SUM(value), MAX(unit)
 FROM observations
-WHERE value_kind='number' AND observed_at < ?
+WHERE value_kind IN ('number','integer','counter') AND observed_at < ?
 GROUP BY organization_id, asset_id, capability, %s`, hourExpr, hourExpr)
 	}
 	rows, err := s.query(ctx, q, cutoffS)
@@ -132,7 +132,7 @@ ON CONFLICT(organization_id,asset_id,capability,bucket_start) DO UPDATE SET
 			return 0, err
 		}
 	}
-	del := s.rebind(`DELETE FROM observations WHERE value_kind='number' AND observed_at < ?`)
+	del := s.rebind(`DELETE FROM observations WHERE value_kind IN ('number','integer','counter') AND observed_at < ?`)
 	res, err := tx.ExecContext(ctx, del, cutoffS)
 	if err != nil {
 		return 0, err

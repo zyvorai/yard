@@ -672,6 +672,15 @@ paths:
     post:
       summary: Connector-authenticated observation ingest
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/IngestObservation"
+                - type: array
+                  items: { $ref: "#/components/schemas/IngestObservation" }
       responses:
         "202":
           description: accepted
@@ -776,11 +785,43 @@ components:
         asset_id: { type: string }
         capability: { type: string }
         value: { type: number }
+        value_kind:
+          type: string
+          enum: [number, integer, counter, bool, text, json, ref, enum, event, histogram]
+        value_text: { type: string }
         unit: { type: string }
         quality: { type: string, enum: [good, bad, uncertain] }
+        quality_reason: { type: string }
+        uncertainty: { type: number, nullable: true }
+        calibration_state: { type: string }
+        sequence_num: { type: integer, format: int64 }
         source: { type: string }
         observed_at: { type: string, format: date-time }
         received_at: { type: string, format: date-time }
+        dedupe_key: { type: string }
+    IngestObservation:
+      type: object
+      required: [capability]
+      properties:
+        asset_external_ref: { type: string }
+        asset_id: { type: string }
+        capability: { type: string }
+        value: { type: number }
+        value_kind:
+          type: string
+          enum: [number, integer, counter, bool, text, json, ref, enum, event, histogram]
+        value_text: { type: string }
+        unit: { type: string }
+        quality: { type: string, enum: [good, bad, uncertain] }
+        quality_reason: { type: string }
+        uncertainty: { type: number, nullable: true }
+        calibration_state: { type: string }
+        sequence_num: { type: integer, format: int64 }
+        source: { type: string }
+        observed_at: { type: string, format: date-time }
+        dedupe_key: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
     TelemetryPoint:
       type: object
       properties:
@@ -788,6 +829,8 @@ components:
         asset_name: { type: string }
         capability: { type: string }
         value: { type: number }
+        value_kind: { type: string }
+        value_text: { type: string }
         unit: { type: string }
         quality: { type: string }
         source: { type: string }

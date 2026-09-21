@@ -20,13 +20,15 @@ jobs:
       - name: Build
         run: |
           mkdir -p dist
+          ver="${GITHUB_REF_NAME}"
+          ldflags="-X github.com/zyvorai/yard/internal/version.Version=${ver}"
           for pair in linux/amd64 linux/arm64; do
             os=${pair%/*}
             arch=${pair#*/}
             suffix="${os}-${arch}"
-            GOOS=$os GOARCH=$arch go build -o "dist/yard-${suffix}" ./cmd/yard
-            GOOS=$os GOARCH=$arch go build -o "dist/yard-simulator-${suffix}" ./cmd/simulator
-            GOOS=$os GOARCH=$arch go build -o "dist/yard-agent-gateway-${suffix}" ./cmd/agent-gateway
+            GOOS=$os GOARCH=$arch go build -ldflags "$ldflags" -o "dist/yard-${suffix}" ./cmd/yard
+            GOOS=$os GOARCH=$arch go build -ldflags "$ldflags" -o "dist/yard-simulator-${suffix}" ./cmd/simulator
+            GOOS=$os GOARCH=$arch go build -ldflags "$ldflags" -o "dist/yard-agent-gateway-${suffix}" ./cmd/agent-gateway
           done
           go version -m dist/yard-linux-amd64 > dist/sbom.txt
           cd dist

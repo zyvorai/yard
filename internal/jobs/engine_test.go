@@ -110,6 +110,13 @@ func TestTextAndBoolSkipNumericAutomations(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ref: %v %v", err, ok)
 	}
+	_, ok, err = eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "cycles", ValueKind: "counter", Value: 9,
+		ObservedAt: time.Now().UTC(), DedupeKey: "cycles-1",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("counter: %v %v", err, ok)
+	}
 	if _, _, err := eng.IngestObservation(ctx, orgID, model.IngestObservation{
 		AssetExternalRef: "SIM-TEMP-A", Capability: "note", ValueKind: "nope", ValueText: "x",
 	}, "sim"); err == nil {
@@ -140,6 +147,9 @@ func TestTextAndBoolSkipNumericAutomations(t *testing.T) {
 	}
 	if got["photo"].ValueKind != "ref" || got["photo"].ValueText != "att_demo_photo" {
 		t.Fatalf("ref %+v", got["photo"])
+	}
+	if got["cycles"].ValueKind != "counter" || got["cycles"].Value != 9 {
+		t.Fatalf("counter %+v", got["cycles"])
 	}
 	incs, err := st.ListIncidents(ctx, orgID, "open")
 	if err != nil {

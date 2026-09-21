@@ -2,6 +2,8 @@
 
 YARD_LISTEN ?= :8080
 YARD_DATABASE_URL ?= file:data/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)
+VERSION ?= dev
+LDFLAGS := -X github.com/zyvorai/yard/internal/version.Version=$(VERSION)
 
 tidy: ## go mod tidy
 	go mod tidy
@@ -29,9 +31,9 @@ web: ## Build the console and copy it into the binary tree
 
 build: web ## Build yard, simulator, and agent gateway
 	mkdir -p bin
-	go build -o bin/yard ./cmd/yard
-	go build -o bin/yard-simulator ./cmd/simulator
-	go build -o bin/yard-agent-gateway ./cmd/agent-gateway
+	go build -ldflags "$(LDFLAGS)" -o bin/yard ./cmd/yard
+	go build -ldflags "$(LDFLAGS)" -o bin/yard-simulator ./cmd/simulator
+	go build -ldflags "$(LDFLAGS)" -o bin/yard-agent-gateway ./cmd/agent-gateway
 
 run: ## Run the server (YARD_LISTEN, default :8080)
 	mkdir -p data

@@ -19,7 +19,7 @@ Closing loop for the product:
 | 1. Production Foundation | Have | Modes, RBAC, secrets, egress, SSE tickets, readiness, authenticator codes, Vault key fetch, shared login and ingest limits | |
 | 2. Reliable Actions | Have | Durable jobs, backoff, retry and cancel, connector sync, leader lock, live-event relay, action approval, shared login limits | |
 | 3. Maintenance Operations | Have | Locations, templates, links, schedules, QR labels, files, parts and labor, Field page | |
-| 4. Telemetry Data Platform | Have | Retention, typed values (number/bool/text/json/ref/enum/event/histogram), sequence and quality metadata, hourly rollups, remote write, OTLP JSON, MQTT, saved dashboards, filtered query, export, optional Timescale hypertable | |
+| 4. Telemetry Data Platform | Have | Retention, typed values (number/integer/counter/bool/text/json/ref/enum/event/histogram), sequence and quality metadata, hourly rollups, remote write, OTLP JSON, MQTT, saved dashboards, filtered query, export, optional Timescale hypertable | |
 | 5. Intelligent Incident Management | Have | Debounce, hysteresis, flap counts, parent incidents, ack and resolve SLAs, on-call, timeline | |
 | 6. Safe Automation and Playbook Engine | Have | Step editor, dry-run, approval, ordered steps, source refresh | |
 | 7. Asset Digital Twin and Operations Graph | Have | Desired state, twin, blast radius, geofence enter/exit, floorplan pins | |

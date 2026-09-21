@@ -234,7 +234,7 @@ func (s *Server) telemetryExport(w http.ResponseWriter, r *http.Request, u *mode
 	case "prometheus":
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		for _, o := range list {
-			if o.ValueKind != "" && o.ValueKind != "number" {
+			if o.ValueKind != "" && o.ValueKind != "number" && o.ValueKind != "integer" && o.ValueKind != "counter" {
 				continue
 			}
 			_, _ = io.WriteString(w, fmt.Sprintf("yard_observation{asset=%q,capability=%q} %g %d\n", o.AssetID, o.Capability, o.Value, o.ObservedAt.UnixMilli()))

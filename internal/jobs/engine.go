@@ -306,7 +306,7 @@ func (e *Engine) IngestObservation(ctx context.Context, orgID string, in model.I
 	if err := e.applyAutomations(ctx, orgID, asset, obs); err != nil && e.Log != nil {
 		e.Log.Error("automation", "err", err)
 	}
-	if kind == "number" {
+	if isNumericKind(kind) {
 		e.noteAnomaly(ctx, orgID, asset, obs)
 	}
 	if in.Latitude != nil && in.Longitude != nil {
@@ -321,7 +321,7 @@ func classifyObservation(in model.IngestObservation) (kind string, num float64, 
 		kind = "number"
 	}
 	switch kind {
-	case "number":
+	case "number", "integer", "counter":
 		return kind, in.Value, "", nil
 	case "bool":
 		text = strings.ToLower(strings.TrimSpace(in.ValueText))
@@ -389,7 +389,16 @@ func classifyObservation(in model.IngestObservation) (kind string, num float64, 
 		}
 		return kind, body.Sum, text, nil
 	default:
-		return "", 0, "", fmt.Errorf("value_kind must be number, bool, text, json, ref, enum, event, or histogram")
+		return "", 0, "", fmt.Errorf("value_kind must be number, integer, counter, bool, text, json, ref, enum, event, or histogram")
+	}
+}
+
+func isNumericKind(kind string) bool {
+	switch kind {
+	case "", "number", "integer", "counter":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -397,7 +406,7 @@ func deriveHealth(cap string, value float64, kind, quality string) string {
 	if quality == "bad" || quality == "uncertain" {
 		return "degraded"
 	}
-	if kind != "" && kind != "number" {
+	if !isNumericKind(kind) {
 		return "healthy"
 	}
 	switch strings.ToLower(cap) {
@@ -424,7 +433,7 @@ func deriveHealth(cap string, value float64, kind, quality string) string {
 // entry, and soft-vs-hard severity is just the operator's choice of the
 // existing "notify" vs "open_incident" action.
 func (e *Engine) applyAutomations(ctx context.Context, orgID string, asset *model.Asset, obs *model.Observation) error {
-	if obs.ValueKind != "" && obs.ValueKind != "number" {
+	if !isNumericKind(obs.ValueKind) {
 		return nil
 	}
 	autos, err := e.Store.ListAutomations(ctx, orgID)
@@ -585,7 +594,7 @@ func (e *Engine) noteAnomaly(ctx context.Context, orgID string, asset *model.Ass
 	}
 	prior := make([]float64, 0, 20)
 	for _, row := range list[1:] {
-		if row.ValueKind != "" && row.ValueKind != "number" {
+		if !isNumericKind(row.ValueKind) {
 			return
 		}
 		prior = append(prior, row.Value)
