@@ -341,7 +341,14 @@ type IngestObservation struct {
 	AssetExternalRef string    `json:"asset_external_ref"`
 	Capability       string    `json:"capability"`
 	Value            float64   `json:"value"`
+	ValueKind        string    `json:"value_kind,omitempty"`
+	ValueText        string    `json:"value_text,omitempty"`
 	Unit             string    `json:"unit"`
+	Quality          string    `json:"quality,omitempty"`
+	QualityReason    string    `json:"quality_reason,omitempty"`
+	Uncertainty      *float64  `json:"uncertainty,omitempty"`
+	Calibration      string    `json:"calibration_state,omitempty"`
+	SequenceNum      int64     `json:"sequence_num,omitempty"`
 	Source           string    `json:"source,omitempty"`
 	ObservedAt       time.Time `json:"observed_at,omitempty"`
 	DedupeKey        string    `json:"dedupe_key,omitempty"`

@@ -150,7 +150,14 @@ export interface IngestObservation {
   asset_external_ref: string;
   capability: string;
   value: number;
+  value_kind?: string;
+  value_text?: string;
   unit?: string;
+  quality?: string;
+  quality_reason?: string;
+  uncertainty?: number;
+  calibration_state?: string;
+  sequence_num?: number;
   source?: string;
   observed_at?: string;
   dedupe_key?: string;

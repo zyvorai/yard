@@ -3,7 +3,7 @@
 [![CI](https://github.com/zyvorai/yard/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/yard/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-zyvorai.github.io%2Fyard-0a84ff)](https://zyvorai.github.io/yard/)
-[![Go 1.22+](https://img.shields.io/badge/go-1.22%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![React 18](https://img.shields.io/badge/react-18-0a84ff?logo=react&logoColor=white)](web/package.json)
 
 ![Yard — open asset and operations platform](docs/social/yard-share-card.png)
@@ -182,7 +182,7 @@ scripts/restore.sh     restore a scripts/backup.sh snapshot
 
 ## Prerequisites
 
-Go 1.25+ (`go.mod`) and Node 20+ (the docs site build uses Node 22). SQLite ships with the Go standard toolchain via `modernc.org/sqlite` — no CGO, no system SQLite package required. Postgres is optional (`docker compose --profile postgres`). No other services are required to run Yard standalone.
+Go 1.27+ (`go.mod`) and Node 20+ (the docs site build uses Node 22). SQLite ships with the Go standard toolchain via `modernc.org/sqlite` — no CGO, no system SQLite package required. Postgres is optional (`docker compose --profile postgres`). No other services are required to run Yard standalone.
 
 ```bash
 make help
@@ -277,7 +277,7 @@ Organization · User · Session · APIKey · Site · Location · Asset · Capabi
 Event · WorkOrder · Incident · SeverityPolicy · ActionRequest · Job ·
 Connector · ConnectorSecret · Automation
 
-Every observation stores **source**, **unit**, **observed_at**, **received_at**, **quality**, and a **value_kind** of number, bool, or text. Numeric rows older than 24 hours become hourly rollups. Set `YARD_MQTT_URL` to subscribe, or post Prometheus remote write and OTLP JSON to the ingest routes. Saved dashboards are panels of one asset and one capability. Severity policies map capability or automation matches to incident severity and runbook text. Connector actions are queued, expire, carry an idempotency key, and record an outcome when the worker finishes. Locations are a parented list; asset templates and links are stored and not yet exposed in the console.
+Every observation stores **source**, **unit**, **observed_at**, **received_at**, **quality**, optional **quality_reason** / **uncertainty** / **calibration_state** / **sequence_num**, and a **value_kind** of number, bool, text, json, ref, enum, event, or histogram. Numeric rows older than 24 hours become hourly rollups. Set `YARD_MQTT_URL` to subscribe, or post Prometheus remote write and OTLP JSON to the ingest routes. Saved dashboards are panels of one asset and one capability. Severity policies map capability or automation matches to incident severity and runbook text. Connector actions are queued, expire, carry an idempotency key, and record an outcome when the worker finishes. Locations, templates, catalogs, and links are in the API and console.
 
 ## Interface
 
@@ -312,7 +312,7 @@ Or `make test`. Release gates cover tenant isolation, connector authentication, 
 | SDKs | [sdk/](sdk/) — Go and TypeScript |
 | Security | [SECURITY.md](SECURITY.md) · [docs site](https://zyvorai.github.io/yard/docs/security) |
 
-Shipped epics include live ops (SSE tickets + stale ticker), registry completeness, bulk CSV/JSON, map clustering, severity runbooks, and the production foundation (modes, RBAC, encrypted connector secrets, egress policy, readiness). Reliable actions and maintenance locations are started. Later programs are listed in [docs/PHASES.md](docs/PHASES.md).
+Shipped epics cover programs 1–16 in [docs/PHASES.md](docs/PHASES.md): production modes and RBAC, durable actions, maintenance and field ops, telemetry (including optional Timescale), incidents, playbooks, twin and geofence, connectors, intelligence, identity, HA, energy, packs, releases, and the community edition boundary. Logistics routing stays deferred.
 
 ## License
 

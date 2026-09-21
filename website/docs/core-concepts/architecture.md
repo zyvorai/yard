@@ -19,15 +19,17 @@ Event · WorkOrder · Incident · SeverityPolicy · ActionRequest · Job ·
 Connector · Automation
 
 Every observation stores **source**, **unit**, **observed_at**,
-**received_at**, and **quality**. Offline data is marked stale rather than
+**received_at**, **quality**, optional **quality_reason**, **uncertainty**,
+**calibration_state**, and **sequence_num**. Offline data is marked stale rather than
 healthy.
 
 Remote actions with a connector are inserted as `queued` and run by an
 in-process worker (`internal/queue`). Idempotency keys and expiry remain.
 Outbound connector credentials are encrypted; the API returns a hint only.
 
-`GET`/`POST /api/v1/locations` stores a parented place. Asset template and
-link tables exist and are not yet a console feature.
+`GET`/`POST /api/v1/locations` stores a parented place. Asset templates,
+catalogs, and links are available in the API and console where operators
+need them.
 
 ## Boundaries
 

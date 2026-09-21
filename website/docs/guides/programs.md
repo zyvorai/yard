@@ -30,7 +30,7 @@ Live updates use a one-time ticket:
 
 **Locations and field.** `GET` and `POST /api/v1/locations` store a named place with an optional parent. Asset templates, catalogs, links, QR labels, NFC lookup, BOM lines, and install history are in the API. A work order `schedule_cron` opens one work order when that minute arrives. **Field** (`/field`) keeps open work orders and manuals on the device, shows checklist and permit state while online, and syncs a completion when the network returns.
 
-**Telemetry.** An observation can be a number, a bool, text, or a histogram. Numeric readings older than 24 hours roll up hourly. Prometheus remote write, OTLP JSON metrics, MQTT, filtered query, and CSV / Prometheus / OTLP export are ingest and read paths. PostgreSQL keeps monthly rollup partitions. Optional TimescaleDB is `YARD_TIMESCALE=1` against a TimescaleDB image; `/api/v1/meta` reports `timescale`.
+**Telemetry.** An observation can be a number, bool, text, json, ref, enum, event, or histogram, with optional sequence, quality reason, uncertainty, and calibration state. Numeric readings older than 24 hours roll up hourly. Prometheus remote write, OTLP JSON metrics, MQTT, filtered query, and CSV / Prometheus / OTLP export are ingest and read paths. PostgreSQL keeps monthly rollup partitions. Optional TimescaleDB is `YARD_TIMESCALE=1` against a TimescaleDB image; `/api/v1/meta` reports `timescale`.
 
 | Order | Program | Intent |
 | ---: | --- | --- |

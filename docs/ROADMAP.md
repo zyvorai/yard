@@ -99,7 +99,8 @@ flowchart TD
 | Multi-signal dashboards per asset | Have |
 | Capability min/max enforcement + soft/hard alarms | Have (`capability_min`/`capability_max` automation triggers) |
 | Metric retention / downsampling | Have (admin `retention_days`; numeric rows older than 24h become hourly rollups; optional Timescale hypertable via `YARD_TIMESCALE=1`) |
-| Typed values (number, bool, text) | Have (`value_kind` / `value_text`; charts stay numeric) |
+| Typed values (number, bool, text) | Have (`value_kind` / `value_text`; also `json`, `ref`, `enum`, `event`, `histogram`) |
+| Sequence, quality reason, uncertainty | Have (`sequence_num`, `quality_reason`, `uncertainty`, `calibration_state` on ingest) |
 | Prometheus remote write and OTLP JSON ingest | Have |
 | MQTT subscriber | Have when `YARD_MQTT_URL` is set |
 | Saved dashboards | Have |

@@ -223,9 +223,13 @@ func (s *Server) telemetryExport(w http.ResponseWriter, r *http.Request, u *mode
 	switch format {
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv")
-		_, _ = io.WriteString(w, "observed_at,asset_id,capability,value,value_kind,value_text,unit\n")
+		_, _ = io.WriteString(w, "observed_at,asset_id,capability,value,value_kind,value_text,unit,quality,quality_reason,sequence_num,uncertainty,calibration_state\n")
 		for _, o := range list {
-			_, _ = io.WriteString(w, o.ObservedAt.UTC().Format(time.RFC3339)+","+o.AssetID+","+csvCell(o.Capability)+","+fmt.Sprintf("%g", o.Value)+","+o.ValueKind+","+csvCell(o.ValueText)+","+csvCell(o.Unit)+"\n")
+			unc := ""
+			if o.Uncertainty != nil {
+				unc = fmt.Sprintf("%g", *o.Uncertainty)
+			}
+			_, _ = io.WriteString(w, o.ObservedAt.UTC().Format(time.RFC3339)+","+o.AssetID+","+csvCell(o.Capability)+","+fmt.Sprintf("%g", o.Value)+","+o.ValueKind+","+csvCell(o.ValueText)+","+csvCell(o.Unit)+","+csvCell(o.Quality)+","+csvCell(o.QualityReason)+","+fmt.Sprintf("%d", o.SequenceNum)+","+unc+","+csvCell(o.Calibration)+"\n")
 		}
 	case "prometheus":
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")

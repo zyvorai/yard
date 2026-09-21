@@ -112,6 +112,10 @@ type Observation struct {
 	ValueText      string    `json:"value_text,omitempty"`
 	Unit           string    `json:"unit"`
 	Quality        string    `json:"quality"`
+	QualityReason  string    `json:"quality_reason,omitempty"`
+	Uncertainty    *float64  `json:"uncertainty,omitempty"`
+	Calibration    string    `json:"calibration_state,omitempty"`
+	SequenceNum    int64     `json:"sequence_num,omitempty"`
 	Source         string    `json:"source"`
 	ObservedAt     time.Time `json:"observed_at"`
 	ReceivedAt     time.Time `json:"received_at"`
@@ -346,6 +350,10 @@ type IngestObservation struct {
 	ValueText        string    `json:"value_text,omitempty"`
 	Unit             string    `json:"unit"`
 	Quality          string    `json:"quality"`
+	QualityReason    string    `json:"quality_reason,omitempty"`
+	Uncertainty      *float64  `json:"uncertainty,omitempty"`
+	Calibration      string    `json:"calibration_state,omitempty"`
+	SequenceNum      int64     `json:"sequence_num,omitempty"`
 	Source           string    `json:"source"`
 	ObservedAt       time.Time `json:"observed_at"`
 	DedupeKey        string    `json:"dedupe_key"`

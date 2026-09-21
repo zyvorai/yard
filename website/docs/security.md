@@ -81,14 +81,14 @@ The controls above are the production baseline: mode, encrypted secrets, login l
 
 CORS in demo mode with no allowlist is `*`. `Strict-Transport-Security` is sent when `YARD_PUBLIC_URL` uses `https`.
 
-## OIDC discovery (Partial)
+## OIDC login
 
 `GET /api/v1/auth/oidc` returns issuer/client metadata when `YARD_OIDC_ISSUER`
 and `YARD_OIDC_CLIENT_ID` are set (Helm chart `oidc.*` values map to these
-env vars). The browser authorization-code callback is not wired yet — treat
-this as discovery-only.
+env vars). `GET /api/v1/auth/oidc/start` begins the authorization code flow;
+`/api/v1/auth/oidc/callback` exchanges the code and issues a Yard session.
 
-See [Programs](./guides/programs) for what is only started or still planned.
+See [Programs](./guides/programs) for the full program board.
 
 ## Audit
 

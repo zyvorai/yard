@@ -80,6 +80,36 @@ func TestTextAndBoolSkipNumericAutomations(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("bool: %v %v", err, ok)
 	}
+	unc := 0.15
+	_, ok, err = eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "payload", ValueKind: "json", ValueText: `{"rpm":1200}`,
+		Quality: "uncertain", QualityReason: "sensor_warmup", Uncertainty: &unc, Calibration: "due", SequenceNum: 42,
+		ObservedAt: time.Now().UTC(), DedupeKey: "payload-1",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("json meta: %v %v", err, ok)
+	}
+	_, ok, err = eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "mode", ValueKind: "enum", ValueText: "auto",
+		ObservedAt: time.Now().UTC(), DedupeKey: "mode-1",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("enum: %v %v", err, ok)
+	}
+	_, ok, err = eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "trip", ValueKind: "event", ValueText: `{"code":"E42"}`,
+		ObservedAt: time.Now().UTC(), DedupeKey: "trip-1",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("event: %v %v", err, ok)
+	}
+	_, ok, err = eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "photo", ValueKind: "ref", ValueText: "att_demo_photo",
+		ObservedAt: time.Now().UTC(), DedupeKey: "photo-1",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("ref: %v %v", err, ok)
+	}
 	if _, _, err := eng.IngestObservation(ctx, orgID, model.IngestObservation{
 		AssetExternalRef: "SIM-TEMP-A", Capability: "note", ValueKind: "nope", ValueText: "x",
 	}, "sim"); err == nil {
@@ -98,6 +128,18 @@ func TestTextAndBoolSkipNumericAutomations(t *testing.T) {
 	}
 	if got["door"].ValueKind != "bool" || got["door"].ValueText != "true" || got["door"].Value != 1 {
 		t.Fatalf("bool %+v", got["door"])
+	}
+	if got["payload"].ValueKind != "json" || got["payload"].ValueText != `{"rpm":1200}` || got["payload"].SequenceNum != 42 || got["payload"].QualityReason != "sensor_warmup" || got["payload"].Calibration != "due" || got["payload"].Uncertainty == nil || *got["payload"].Uncertainty != 0.15 {
+		t.Fatalf("json meta %+v", got["payload"])
+	}
+	if got["mode"].ValueKind != "enum" || got["mode"].ValueText != "auto" {
+		t.Fatalf("enum %+v", got["mode"])
+	}
+	if got["trip"].ValueKind != "event" || got["trip"].ValueText != `{"code":"E42"}` {
+		t.Fatalf("event %+v", got["trip"])
+	}
+	if got["photo"].ValueKind != "ref" || got["photo"].ValueText != "att_demo_photo" {
+		t.Fatalf("ref %+v", got["photo"])
 	}
 	incs, err := st.ListIncidents(ctx, orgID, "open")
 	if err != nil {

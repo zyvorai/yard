@@ -452,6 +452,10 @@ CREATE TABLE IF NOT EXISTS org_members (
 );
 ALTER TABLE users ADD COLUMN widgets TEXT NOT NULL DEFAULT '["health","incidents","work","activity"]';
 ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en';`},
+	{34, `ALTER TABLE observations ADD COLUMN sequence_num INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE observations ADD COLUMN quality_reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE observations ADD COLUMN uncertainty REAL;
+ALTER TABLE observations ADD COLUMN calibration_state TEXT NOT NULL DEFAULT '';`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
@@ -622,6 +626,21 @@ func parseTimePtr(s sql.NullString) *time.Time {
 	}
 	t := parseTime(s.String)
 	return &t
+}
+
+func nullFloat(v *float64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+func floatPtr(v sql.NullFloat64) *float64 {
+	if !v.Valid {
+		return nil
+	}
+	x := v.Float64
+	return &x
 }
 
 func nullF(n sql.NullFloat64) *float64 {
@@ -1215,8 +1234,8 @@ func (s *Store) InsertObservation(ctx context.Context, o *model.Observation) (bo
 			return false, nil
 		}
 	}
-	_, err := s.exec(ctx, `INSERT INTO observations(id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key,value_kind,value_text)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.ID, o.OrganizationID, o.AssetID, o.Capability, o.Value, o.Unit, o.Quality, o.Source, o.ObservedAt.Format(time.RFC3339Nano), o.ReceivedAt.Format(time.RFC3339Nano), o.DedupeKey, obsKind(o.ValueKind), o.ValueText)
+	_, err := s.exec(ctx, `INSERT INTO observations(id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key,value_kind,value_text,sequence_num,quality_reason,uncertainty,calibration_state)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.ID, o.OrganizationID, o.AssetID, o.Capability, o.Value, o.Unit, o.Quality, o.Source, o.ObservedAt.Format(time.RFC3339Nano), o.ReceivedAt.Format(time.RFC3339Nano), o.DedupeKey, obsKind(o.ValueKind), o.ValueText, o.SequenceNum, o.QualityReason, nullFloat(o.Uncertainty), o.Calibration)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return false, nil
@@ -1233,7 +1252,7 @@ func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string
 	if limit <= 0 || limit > 2000 {
 		limit = 400
 	}
-	q := `SELECT id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key,value_kind,value_text FROM observations WHERE organization_id=?`
+	q := `SELECT id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key,value_kind,value_text,sequence_num,quality_reason,uncertainty,calibration_state FROM observations WHERE organization_id=?`
 	args := []any{orgID}
 	if assetID != "" {
 		q += ` AND asset_id=?`
@@ -1262,11 +1281,13 @@ func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string
 	for rows.Next() {
 		var o model.Observation
 		var obs, rec string
-		if err := rows.Scan(&o.ID, &o.OrganizationID, &o.AssetID, &o.Capability, &o.Value, &o.Unit, &o.Quality, &o.Source, &obs, &rec, &o.DedupeKey, &o.ValueKind, &o.ValueText); err != nil {
+		var unc sql.NullFloat64
+		if err := rows.Scan(&o.ID, &o.OrganizationID, &o.AssetID, &o.Capability, &o.Value, &o.Unit, &o.Quality, &o.Source, &obs, &rec, &o.DedupeKey, &o.ValueKind, &o.ValueText, &o.SequenceNum, &o.QualityReason, &unc, &o.Calibration); err != nil {
 			return nil, err
 		}
 		o.ObservedAt = parseTime(obs)
 		o.ReceivedAt = parseTime(rec)
+		o.Uncertainty = floatPtr(unc)
 		out = append(out, o)
 	}
 	if err := rows.Err(); err != nil {

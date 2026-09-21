@@ -91,7 +91,7 @@ helm upgrade --install yard ./deploy/helm/yard \
 | `listen` / `databaseUrl` | Process bind address and SQLite/Postgres DSN |
 | `mode` / `publicUrl` / `secretKey` / `corsOrigins` | Runtime mode and production hardening |
 | `persistence.*` | PVC for SQLite when not using an external DB |
-| `oidc.enabled` + `oidc.issuer` / `clientId` / `clientSecret` | Sets `YARD_OIDC_*` for `GET /api/v1/auth/oidc` discovery (browser callback is still Partial) |
+| `oidc.enabled` + `oidc.issuer` / `clientId` / `clientSecret` | Sets `YARD_OIDC_*` for discovery, start, and callback login |
 
 For remote hosts, prefer `make deploy-remote H=<host> U=sus`
 (`./scripts/deploy-remote.sh USER@HOST`, or `./scripts/ship`). Set `YARD_URL` to a loopback URL inside the process

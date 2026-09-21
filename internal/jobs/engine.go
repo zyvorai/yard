@@ -282,6 +282,10 @@ func (e *Engine) IngestObservation(ctx context.Context, orgID string, in model.I
 		ValueText:      text,
 		Unit:           in.Unit,
 		Quality:        in.Quality,
+		QualityReason:  strings.TrimSpace(in.QualityReason),
+		Uncertainty:    in.Uncertainty,
+		Calibration:    strings.TrimSpace(in.Calibration),
+		SequenceNum:    in.SequenceNum,
 		Source:         in.Source,
 		ObservedAt:     in.ObservedAt.UTC(),
 		DedupeKey:      in.DedupeKey,
@@ -337,6 +341,42 @@ func classifyObservation(in model.IngestObservation) (kind string, num float64, 
 			text = text[:500]
 		}
 		return kind, 0, text, nil
+	case "json":
+		text = strings.TrimSpace(in.ValueText)
+		if text == "" || !json.Valid([]byte(text)) {
+			return "", 0, "", fmt.Errorf("json observation needs valid value_text JSON")
+		}
+		if len(text) > 8000 {
+			text = text[:8000]
+		}
+		return kind, 0, text, nil
+	case "ref":
+		text = strings.TrimSpace(in.ValueText)
+		if text == "" {
+			return "", 0, "", fmt.Errorf("ref observation needs value_text (image or file reference)")
+		}
+		if len(text) > 2000 {
+			text = text[:2000]
+		}
+		return kind, 0, text, nil
+	case "enum":
+		text = strings.TrimSpace(in.ValueText)
+		if text == "" {
+			return "", 0, "", fmt.Errorf("enum observation needs value_text")
+		}
+		if len(text) > 200 {
+			text = text[:200]
+		}
+		return kind, 0, text, nil
+	case "event":
+		text = strings.TrimSpace(in.ValueText)
+		if text == "" {
+			return "", 0, "", fmt.Errorf("event observation needs value_text payload")
+		}
+		if len(text) > 8000 {
+			text = text[:8000]
+		}
+		return kind, 0, text, nil
 	case "histogram":
 		text = strings.TrimSpace(in.ValueText)
 		var body struct {
@@ -349,7 +389,7 @@ func classifyObservation(in model.IngestObservation) (kind string, num float64, 
 		}
 		return kind, body.Sum, text, nil
 	default:
-		return "", 0, "", fmt.Errorf("value_kind must be number, bool, text, or histogram")
+		return "", 0, "", fmt.Errorf("value_kind must be number, bool, text, json, ref, enum, event, or histogram")
 	}
 }
 
