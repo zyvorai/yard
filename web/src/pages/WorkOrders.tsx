@@ -3,24 +3,67 @@ import { Link } from "react-router-dom";
 import { api, Asset, WorkOrder } from "../lib/api";
 import { fmt } from "../components/Shell";
 
+type Line = { id: string; kind: string; name: string; quantity: number; unit: string; unit_cost_cents: number };
+
 export default function WorkOrders() {
   const [rows, setRows] = useState<WorkOrder[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState("");
+  const [sel, setSel] = useState<WorkOrder | null>(null);
+  const [lines, setLines] = useState<Line[]>([]);
+  const [canWrite, setCanWrite] = useState(false);
+  const [lineForm, setLineForm] = useState({ kind: "part", name: "", quantity: "1", unit: "ea", cost: "" });
   const [form, setForm] = useState({
     title: "", kind: "repair", priority: "normal", assignee: "", asset_id: "", notes: "", due_at: "", schedule_cron: "",
   });
 
   async function load() {
-    const [w, a] = await Promise.all([
+    const [w, a, me] = await Promise.all([
       api<WorkOrder[]>("/api/v1/work-orders"),
       api<Asset[]>("/api/v1/assets"),
+      api<{ role: string }>("/api/v1/auth/me"),
     ]);
     setRows(w);
     setAssets(a);
+    setCanWrite(me.role === "admin" || me.role === "operator");
   }
   useEffect(() => { load(); }, []);
+
+  async function select(w: WorkOrder) {
+    setSel(w);
+    setLines(await api<Line[]>(`/api/v1/work-orders/${w.id}/lines`));
+    setErr("");
+  }
+
+  async function addLine(e: FormEvent) {
+    e.preventDefault();
+    if (!sel) return;
+    setErr("");
+    const dollars = Number(lineForm.cost || "0");
+    if (!lineForm.name.trim() || Number.isNaN(dollars) || dollars < 0) {
+      setErr("Name and a non-negative cost are required");
+      return;
+    }
+    try {
+      await api(`/api/v1/work-orders/${sel.id}/lines`, {
+        method: "POST",
+        body: JSON.stringify({
+          kind: lineForm.kind,
+          name: lineForm.name.trim(),
+          quantity: Number(lineForm.quantity) || 1,
+          unit: lineForm.unit.trim(),
+          unit_cost_cents: Math.round(dollars * 100),
+        }),
+      });
+      setLineForm({ kind: "part", name: "", quantity: "1", unit: lineForm.kind === "labor" ? "h" : "ea", cost: "" });
+      setLines(await api<Line[]>(`/api/v1/work-orders/${sel.id}/lines`));
+    } catch (ex) {
+      setErr(ex instanceof Error ? ex.message : "line failed");
+    }
+  }
+
+  const total = lines.reduce((sum, l) => sum + l.quantity * l.unit_cost_cents, 0);
 
   async function done(id: string) {
     await api(`/api/v1/work-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status: "done", notes: "Completed in the field." }) });
@@ -105,7 +148,7 @@ export default function WorkOrders() {
               <tr key={w.id}>
                 <td>{w.title}</td><td>{w.kind}</td><td>{w.priority}</td><td>{w.status}</td><td>{w.assignee || "—"}</td>
                 <td>{w.due_at ? fmt(w.due_at) : "—"}</td><td>{fmt(w.created_at)}</td>
-                <td>{w.status !== "done" && <button className="btn small" onClick={() => done(w.id)}>Complete</button>}</td>
+                <td><button type="button" className="btn small ghost" onClick={() => select(w)}>Parts</button> {w.status !== "done" && <button className="btn small" onClick={() => done(w.id)}>Complete</button>}</td>
               </tr>
             ))}
           </tbody>
@@ -118,6 +161,31 @@ export default function WorkOrders() {
           </p>
         )}
       </div>
+      {sel && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h2>Parts and labor · {sel.title}</h2>
+          <p className="lede">Total ${(total / 100).toFixed(2)}</p>
+          {lines.map((l) => (
+            <p key={l.id}>{l.kind}: {l.name} · {l.quantity} {l.unit} · ${((l.quantity * l.unit_cost_cents) / 100).toFixed(2)}</p>
+          ))}
+          {!lines.length && <p className="empty">No parts or labor yet.</p>}
+          {canWrite && (
+            <form onSubmit={addLine} className="form-grid" style={{ marginTop: 12 }}>
+              <label>Kind
+                <select value={lineForm.kind} onChange={(e) => setLineForm({ ...lineForm, kind: e.target.value, unit: e.target.value === "labor" ? "h" : "ea" })}>
+                  <option value="part">part</option>
+                  <option value="labor">labor</option>
+                </select>
+              </label>
+              <label>Name<input value={lineForm.name} onChange={(e) => setLineForm({ ...lineForm, name: e.target.value })} required /></label>
+              <label>Qty<input value={lineForm.quantity} onChange={(e) => setLineForm({ ...lineForm, quantity: e.target.value })} /></label>
+              <label>Unit<input value={lineForm.unit} onChange={(e) => setLineForm({ ...lineForm, unit: e.target.value })} /></label>
+              <label>Unit cost<input value={lineForm.cost} onChange={(e) => setLineForm({ ...lineForm, cost: e.target.value })} placeholder="12.50" /></label>
+              <button className="btn small accent" type="submit">Add</button>
+            </form>
+          )}
+        </div>
+      )}
     </>
   );
 }

@@ -211,6 +211,18 @@ CREATE INDEX IF NOT EXISTS live_events_time ON live_events(created_at);`},
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS attachments_asset ON attachments(organization_id, asset_id);`},
+	{13, `CREATE TABLE IF NOT EXISTS work_order_lines (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL,
+  work_order_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  quantity REAL NOT NULL DEFAULT 1,
+  unit TEXT NOT NULL DEFAULT '',
+  unit_cost_cents INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS work_order_lines_wo ON work_order_lines(organization_id, work_order_id);`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this

@@ -18,7 +18,7 @@ Closing loop for the product:
 | --- | --- | --- | --- |
 | 1. Production Foundation | Have | Modes, RBAC, secrets, egress, SSE tickets, readiness | OIDC login, MFA, Vault, distributed rate limits |
 | 2. Reliable Actions | Have | Durable jobs, backoff, retry and cancel, connector sync, leader lock, live-event relay, action approval, shared login limits | Playbook approvals stay in program 6 |
-| 3. Maintenance Operations | Partial | Locations, templates, links, cron schedules, QR labels, asset files | Parts and labor, technician PWA |
+| 3. Maintenance Operations | Have | Locations, templates, links, schedules, QR labels, files, parts and labor, Field page | Skills and shifts stay in program 12 |
 | 4–16 | Planned | Names and order in `internal/platform` | All of the behavior described in those phases |
 
 The public lab at `http://175.110.122.71:18081` runs **demo** mode. Demo credentials are valid there on purpose. A production install must set `YARD_MODE=production` (see [SECURITY.md](../SECURITY.md)).
@@ -79,7 +79,7 @@ OIDC remains discovery only (`GET /api/v1/auth/oidc`). There is no authorization
 - `lifecycle.request`, `update.delegate`, `reboot`, `shutdown`, `wipe`, `firmware.update`, `power.off`, and `factory.reset` are stored as `pending_approval`. `POST /api/v1/jobs/{id}/approve` requires a different operator or admin.
 - Login failures are counted in `login_attempts` (10 failures / 15 minutes per IP and email) so the limit is shared by every replica.
 
-## 3. Maintenance Operations (Partial)
+## 3. Maintenance Operations (Have)
 
 `locations` stores a parent pointer, name, and kind (`region`, `campus`, `building`, `floor`, `zone`, or any string). `GET` and `POST /api/v1/locations` are org-scoped; create requires a write role.
 
@@ -87,7 +87,9 @@ Schema also adds `asset_templates`, `asset_links` (relation names such as `insta
 
 A work order with `schedule_cron` is a schedule. Five fields, UTC: minute, hour, day of month, month, weekday (Sunday is 0). `*` or a comma-separated list of numbers. The leader replica checks every 30 seconds and opens one work order the first time that minute matches. A missed minute is not backfilled.
 
-Not built yet: parts and labor, and an offline technician app. A QR label is `GET /api/v1/assets/{id}/label`. A file on an asset is `POST /api/v1/assets/{id}/attachments` (multipart field `file`, 8 MiB). Bytes live under `YARD_DATA_DIR/attachments` at mode `0600`. List and download stay on that asset; delete requires a write role. The Assets page shows the label and the files.
+Parts and labor are lines on a work order (`kind` `part` or `labor`, quantity, unit, and `unit_cost_cents`). `GET` and `POST /api/v1/work-orders/{id}/lines`, and `DELETE` on a line. The Work orders page totals them. A QR label is `GET /api/v1/assets/{id}/label`. A file on an asset is `POST /api/v1/assets/{id}/attachments` (multipart field `file`, 8 MiB). Bytes live under `YARD_DATA_DIR/attachments` at mode `0600`.
+
+Field (`/field`) is the technician page. The first online visit stores open work orders on the device. Completing one offline queues the note and status, and the page sends them when the network returns. A service worker caches the console shell so the page can open with no connection. It does not cache manuals or run skills, shifts, or permits (those stay in program 12).
 
 ## 4. Telemetry Data Platform (Planned)
 
@@ -127,7 +129,7 @@ Skills, shifts, permits, inspection forms, and offline manuals, still tied to as
 
 ## 13. Energy, Sustainability, and Cost Intelligence (Planned)
 
-Energy, downtime cost, and repair-versus-replace views. No cost fields exist on work orders yet.
+Energy, downtime cost, and repair-versus-replace views. Work order lines store a unit cost. There is no energy or downtime model.
 
 ## 14. Vertical Solution Packs (Planned)
 

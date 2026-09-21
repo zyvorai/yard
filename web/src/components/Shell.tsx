@@ -19,6 +19,7 @@ const NAV_ICONS: Record<string, ReactNode> = {
   "/map": navIcon("M9 20l-6-2V4l6 2 6-2 6 2v14l-6-2-6 2ZM9 6v14M15 4v14"),
   "/telemetry": navIcon("M3 12h4l2 7 4-14 2 7h4"),
   "/work": navIcon("M9 4h6a1 1 0 0 1 1 1v2H8V5a1 1 0 0 1 1-1ZM5 7h14v13H5V7Z"),
+  "/field": navIcon("M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM12 8v4l2 2"),
   "/incidents": navIcon("M12 3l9 16H3l9-16ZM12 10v4M12 17.5v.01"),
   "/automations": navIcon("M13 2 4 14h6l-1 8 9-12h-6l1-8Z"),
   "/integrations": navIcon("M9 3v4M15 3v4M7 7h10a2 2 0 0 1 2 2v2a5 5 0 0 1-5 5h-4a5 5 0 0 1-5-5V9a2 2 0 0 1 2-2ZM12 16v5"),
@@ -36,6 +37,7 @@ const items: [string, string, string][] = [
   ["/map", "Map", "purple"],
   ["/telemetry", "Telemetry", "pink"],
   ["/work", "Work orders", "ok"],
+  ["/field", "Field", "teal"],
   ["/incidents", "Incidents", "bad"],
   ["/automations", "Automations", "purple"],
   ["/integrations", "Integrations", "indigo"],
@@ -47,8 +49,8 @@ const items: [string, string, string][] = [
 
 const mobileItems = [
   ["/", "Home"],
+  ["/field", "Field"],
   ["/assets", "Assets"],
-  ["/map", "Map"],
   ["/work", "Work"],
   ["/settings", "More"],
 ];
@@ -101,14 +103,14 @@ export default function Shell({ children }: { children: ReactNode }) {
           </div>
         </div>
         <nav className="nav">
-          {items.slice(0, 7).map(([to, label, tone]) => (
+          {items.slice(0, 8).map(([to, label, tone]) => (
             <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => (isActive ? "active" : "")}>
               <span className={`nav-icon-chip tone-${tone}`}>{NAV_ICONS[to]}</span>
               {label}
             </NavLink>
           ))}
           <div className="sec">Platform</div>
-          {items.slice(7).map(([to, label, tone]) => (
+          {items.slice(8).map(([to, label, tone]) => (
             <NavLink key={to} to={to} className={({ isActive }) => (isActive ? "active" : "")}>
               <span className={`nav-icon-chip tone-${tone}`}>{NAV_ICONS[to]}</span>
               {label}

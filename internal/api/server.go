@@ -1441,10 +1441,19 @@ func (s *Server) workOrders(w http.ResponseWriter, r *http.Request, u *model.Use
 }
 
 func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.User) {
-	id := strings.TrimPrefix(r.URL.Path, "/api/v1/work-orders/")
+	rest := strings.TrimPrefix(r.URL.Path, "/api/v1/work-orders/")
+	id, extra, hasExtra := strings.Cut(rest, "/")
 	wo, err := s.Store.GetWorkOrder(r.Context(), u.OrganizationID, id)
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	if hasExtra {
+		if !strings.HasPrefix(extra, "lines") {
+			writeJSON(w, 404, map[string]string{"error": "not found"})
+			return
+		}
+		s.workOrderLines(w, r, u, wo, extra)
 		return
 	}
 	if r.Method == http.MethodGet {
@@ -2144,6 +2153,9 @@ func (s *Server) spa() http.Handler {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = io.Copy(w, index)
 			return
+		}
+		if strings.HasSuffix(p, ".webmanifest") {
+			w.Header().Set("Content-Type", "application/manifest+json")
 		}
 		http.ServeContent(w, r, p, time.Time{}, f.(io.ReadSeeker))
 	})

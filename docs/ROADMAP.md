@@ -65,7 +65,7 @@ flowchart TD
 | Asset relationships (parent/child, install history) | Partial (`POST /api/v1/asset-links` and `parent_asset_id`; install history later) |
 | Bulk import/export (CSV/JSON) | Have (`/api/v1/assets/export`, `/import` + Assets UI) |
 | Asset barcode / QR / NFC identity | Partial (QR label PNG and lookup; NFC later) |
-| Spare parts / BOM linked to asset | Later |
+| Spare parts / BOM linked to asset | Partial (part and labor lines on a work order; a stocked BOM later) |
 | Warranties, purchase date, depreciation | Later |
 | Documents / photos / manuals attached to asset | Have (8 MiB file on the asset, stored outside the database) |
 | Asset templates / catalogs | Partial (`GET`/`POST /api/v1/asset-templates` and the Locations page; catalogs later) |
@@ -116,9 +116,9 @@ flowchart TD
 | SLA timers / escalation | Have (`sla_due_at` on work orders; escalation policy later) |
 | Checklists / procedures on work orders | Have (`checklist` JSON on work orders) |
 | Parts used + time tracking | Later |
-| Mobile field tech mode (PWA) | Later |
+| Mobile field tech mode (PWA) | Have (`/field` caches open work orders and syncs completions; manuals and shifts later) |
 | Multi-asset work orders | Later |
-| Calendar / preventive maintenance schedules | Partial (five-field `schedule_cron` opens one work order per matching minute; parts, labor, and a technician app later) |
+| Calendar / preventive maintenance schedules | Partial (five-field `schedule_cron` opens one work order per matching minute) |
 
 ## 5. Automations and actions
 
