@@ -51,6 +51,63 @@ func setup(t *testing.T) (*store.Store, *Engine, string, string) {
 	return st, &Engine{Store: st}, org.ID, a.ID
 }
 
+func TestTextAndBoolSkipNumericAutomations(t *testing.T) {
+	st, eng, orgID, assetID := setup(t)
+	ctx := context.Background()
+	if err := st.CreateAutomation(ctx, &model.Automation{
+		OrganizationID: orgID, Name: "Any status", Enabled: true,
+		TriggerKind: "threshold", Capability: "status", Operator: "gt", Threshold: -1, Action: "open_incident",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAutomation(ctx, &model.Automation{
+		OrganizationID: orgID, Name: "Door open", Enabled: true,
+		TriggerKind: "threshold", Capability: "door", Operator: "gt", Threshold: 0, Action: "open_incident",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, ok, err := eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "status", ValueKind: "text", ValueText: "standby",
+		ObservedAt: time.Now().UTC(), DedupeKey: "status",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("text: %v %v", err, ok)
+	}
+	_, ok, err = eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "door", ValueKind: "bool", ValueText: "true",
+		ObservedAt: time.Now().UTC(), DedupeKey: "door",
+	}, "sim")
+	if err != nil || !ok {
+		t.Fatalf("bool: %v %v", err, ok)
+	}
+	if _, _, err := eng.IngestObservation(ctx, orgID, model.IngestObservation{
+		AssetExternalRef: "SIM-TEMP-A", Capability: "note", ValueKind: "nope", ValueText: "x",
+	}, "sim"); err == nil {
+		t.Fatal("bad kind accepted")
+	}
+	list, err := st.ListObservations(ctx, orgID, assetID, "", time.Time{}, time.Time{}, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]model.Observation{}
+	for _, o := range list {
+		got[o.Capability] = o
+	}
+	if got["status"].ValueKind != "text" || got["status"].ValueText != "standby" || got["status"].Value != 0 {
+		t.Fatalf("text %+v", got["status"])
+	}
+	if got["door"].ValueKind != "bool" || got["door"].ValueText != "true" || got["door"].Value != 1 {
+		t.Fatalf("bool %+v", got["door"])
+	}
+	incs, err := st.ListIncidents(ctx, orgID, "open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(incs) != 0 {
+		t.Fatalf("non-numeric values opened %d incidents", len(incs))
+	}
+}
+
 func TestThresholdOpensIncidentOnce(t *testing.T) {
 	st, eng, orgID, _ := setup(t)
 	ctx := context.Background()

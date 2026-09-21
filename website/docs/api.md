@@ -54,7 +54,7 @@ verified against a real running Yard server, not just typechecked.
 | Policies | `/api/v1/severity-policies` |
 | Platform | `/api/v1/connectors`, `PUT /api/v1/connectors/{id}/secret`, `POST /api/v1/connectors/{id}/test`, `POST /api/v1/connectors/{id}/sync`, `/api/v1/actions`, `GET /api/v1/jobs`, `POST /api/v1/jobs/{id}/retry`, `POST /api/v1/jobs/{id}/cancel`, `POST /api/v1/jobs/{id}/approve`, `/api/v1/automations`, `/api/v1/audit` |
 | Live | `POST /api/v1/stream/ticket`, `GET /api/v1/stream?ticket=` |
-| Ingest | `/api/v1/ingest/observations`, `…/inventory`, `…/events` |
+| Ingest | `/api/v1/ingest/observations` (`value` plus optional `value_kind` `number`/`bool`/`text` and `value_text`), `…/inventory`, `…/events` |
 | Misc | `/api/v1/onboarding`, `/api/v1/geocode` |
 
 Ingest uses connector bearer tokens, not human sessions. See

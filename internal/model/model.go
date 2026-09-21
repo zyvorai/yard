@@ -96,6 +96,8 @@ type Observation struct {
 	AssetID        string    `json:"asset_id"`
 	Capability     string    `json:"capability"`
 	Value          float64   `json:"value"`
+	ValueKind      string    `json:"value_kind,omitempty"`
+	ValueText      string    `json:"value_text,omitempty"`
 	Unit           string    `json:"unit"`
 	Quality        string    `json:"quality"`
 	Source         string    `json:"source"`
@@ -245,6 +247,8 @@ type TelemetryPoint struct {
 	AssetName  string    `json:"asset_name"`
 	Capability string    `json:"capability"`
 	Value      float64   `json:"value"`
+	ValueKind  string    `json:"value_kind,omitempty"`
+	ValueText  string    `json:"value_text,omitempty"`
 	Unit       string    `json:"unit"`
 	Quality    string    `json:"quality"`
 	Source     string    `json:"source"`
@@ -258,6 +262,8 @@ type IngestObservation struct {
 	AssetID          string    `json:"asset_id"`
 	Capability       string    `json:"capability"`
 	Value            float64   `json:"value"`
+	ValueKind        string    `json:"value_kind,omitempty"`
+	ValueText        string    `json:"value_text,omitempty"`
 	Unit             string    `json:"unit"`
 	Quality          string    `json:"quality"`
 	Source           string    `json:"source"`

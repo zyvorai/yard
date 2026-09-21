@@ -9,6 +9,11 @@ const RANGE_PRESETS: { label: string; hours: number }[] = [
   { label: "7d", hours: 24 * 7 },
 ];
 
+function showValue(p: { value: number; unit: string; value_kind?: string; value_text?: string }) {
+  if (p.value_kind === "text" || p.value_kind === "bool") return p.value_text || "";
+  return `${p.value.toFixed(2)} ${p.unit}`.trim();
+}
+
 export default function TelemetryPage() {
   const [rows, setRows] = useState<Telemetry[]>([]);
 
@@ -51,7 +56,7 @@ export default function TelemetryPage() {
             {pts.map((p, i) => (
               <div className="signal-chip" key={i} title={`${p.capability} · ${fmt(p.observed_at)}`}>
                 <span className="signal-name">{p.capability}</span>
-                <span className="signal-value">{p.value.toFixed(2)} {p.unit}</span>
+                <span className="signal-value">{showValue(p)}</span>
               </div>
             ))}
           </div>
@@ -66,7 +71,7 @@ export default function TelemetryPage() {
               <tr key={i}>
                 <td>{r.asset_name}</td>
                 <td>{r.capability}</td>
-                <td>{r.value.toFixed(2)} {r.unit}</td>
+                <td>{showValue(r)}</td>
                 <td>{r.quality}</td>
                 <td><span className={`pill ${r.fresh ? "ok" : "stale"}`}>{r.fresh ? "fresh" : "stale"}</span></td>
                 <td>{fmt(r.observed_at)}</td>
@@ -108,7 +113,10 @@ function HistoryDashboard({ assets, rows }: { assets: { id: string; name: string
     ).then(setPoints);
   }, [assetId, capability, hours]);
 
-  const ordered = useMemo(() => [...points].reverse(), [points]);
+  const ordered = useMemo(
+    () => [...points].filter((p) => !p.value_kind || p.value_kind === "number").reverse(),
+    [points],
+  );
   const max = Math.max(...ordered.map((p) => Math.abs(p.value)), 1);
 
   return (
@@ -140,6 +148,8 @@ function HistoryDashboard({ assets, rows }: { assets: { id: string; name: string
             <i key={i} title={`${p.value} ${p.unit} · ${fmt(p.observed_at)}`} style={{ height: `${Math.max(8, (Math.abs(p.value) / max) * 36)}px` }} />
           ))}
         </div>
+      ) : points.length ? (
+        <p className="empty">{showValue(points[0])}</p>
       ) : (
         <p className="empty">No observations for this asset and signal in the selected range.</p>
       )}

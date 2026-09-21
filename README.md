@@ -277,7 +277,7 @@ Organization · User · Session · APIKey · Site · Location · Asset · Capabi
 Event · WorkOrder · Incident · SeverityPolicy · ActionRequest · Job ·
 Connector · ConnectorSecret · Automation
 
-Every observation stores **source**, **unit**, **observed_at**, **received_at**, and **quality**. Severity policies map capability or automation matches to incident severity and runbook text. Connector actions are queued, expire, carry an idempotency key, and record an outcome when the worker finishes. Locations are a parented list; asset templates and links are stored and not yet exposed in the console.
+Every observation stores **source**, **unit**, **observed_at**, **received_at**, **quality**, and a **value_kind** of number, bool, or text. Severity policies map capability or automation matches to incident severity and runbook text. Connector actions are queued, expire, carry an idempotency key, and record an outcome when the worker finishes. Locations are a parented list; asset templates and links are stored and not yet exposed in the console.
 
 ## Interface
 

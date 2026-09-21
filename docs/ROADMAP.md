@@ -99,6 +99,7 @@ flowchart TD
 | Multi-signal dashboards per asset | Have |
 | Capability min/max enforcement + soft/hard alarms | Have (`capability_min`/`capability_max` automation triggers) |
 | Metric retention / downsampling | Partial (admin sets `retention_days`; downsampling later) |
+| Typed values (number, bool, text) | Have (`value_kind` / `value_text`; charts stay numeric) |
 | Anomaly detection | Later |
 | Export telemetry (CSV, Prometheus, OTLP) | Later |
 

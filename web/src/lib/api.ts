@@ -130,6 +130,8 @@ export type Telemetry = {
   asset_name: string;
   capability: string;
   value: number;
+  value_kind?: string;
+  value_text?: string;
   unit: string;
   quality: string;
   source: string;
@@ -143,6 +145,8 @@ export type Observation = {
   asset_id: string;
   capability: string;
   value: number;
+  value_kind?: string;
+  value_text?: string;
   unit: string;
   quality: string;
   source: string;

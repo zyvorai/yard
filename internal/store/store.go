@@ -224,6 +224,8 @@ CREATE INDEX IF NOT EXISTS attachments_asset ON attachments(organization_id, ass
 );
 CREATE INDEX IF NOT EXISTS work_order_lines_wo ON work_order_lines(organization_id, work_order_id);`},
 	{14, `ALTER TABLE organizations ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 0;`},
+	{15, `ALTER TABLE observations ADD COLUMN value_kind TEXT NOT NULL DEFAULT 'number';
+ALTER TABLE observations ADD COLUMN value_text TEXT NOT NULL DEFAULT '';`},
 }
 
 // baselineSchema is the idempotent CREATE TABLE IF NOT EXISTS block this
@@ -940,6 +942,13 @@ func (s *Store) ListCapabilities(ctx context.Context, assetID string) ([]model.C
 	return out, rows.Err()
 }
 
+func obsKind(kind string) string {
+	if kind == "" {
+		return "number"
+	}
+	return kind
+}
+
 func (s *Store) InsertObservation(ctx context.Context, o *model.Observation) (bool, error) {
 	if o.ID == "" {
 		o.ID = idgen.New("obs")
@@ -950,8 +959,8 @@ func (s *Store) InsertObservation(ctx context.Context, o *model.Observation) (bo
 	if o.Quality == "" {
 		o.Quality = "good"
 	}
-	_, err := s.exec(ctx, `INSERT INTO observations(id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key)
-VALUES(?,?,?,?,?,?,?,?,?,?,?)`, o.ID, o.OrganizationID, o.AssetID, o.Capability, o.Value, o.Unit, o.Quality, o.Source, o.ObservedAt.Format(time.RFC3339Nano), o.ReceivedAt.Format(time.RFC3339Nano), o.DedupeKey)
+	_, err := s.exec(ctx, `INSERT INTO observations(id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key,value_kind,value_text)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, o.ID, o.OrganizationID, o.AssetID, o.Capability, o.Value, o.Unit, o.Quality, o.Source, o.ObservedAt.Format(time.RFC3339Nano), o.ReceivedAt.Format(time.RFC3339Nano), o.DedupeKey, obsKind(o.ValueKind), o.ValueText)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return false, nil
@@ -968,7 +977,7 @@ func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string
 	if limit <= 0 || limit > 2000 {
 		limit = 400
 	}
-	q := `SELECT id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key FROM observations WHERE organization_id=?`
+	q := `SELECT id,organization_id,asset_id,capability,value,unit,quality,source,observed_at,received_at,dedupe_key,value_kind,value_text FROM observations WHERE organization_id=?`
 	args := []any{orgID}
 	if assetID != "" {
 		q += ` AND asset_id=?`
@@ -997,7 +1006,7 @@ func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string
 	for rows.Next() {
 		var o model.Observation
 		var obs, rec string
-		if err := rows.Scan(&o.ID, &o.OrganizationID, &o.AssetID, &o.Capability, &o.Value, &o.Unit, &o.Quality, &o.Source, &obs, &rec, &o.DedupeKey); err != nil {
+		if err := rows.Scan(&o.ID, &o.OrganizationID, &o.AssetID, &o.Capability, &o.Value, &o.Unit, &o.Quality, &o.Source, &obs, &rec, &o.DedupeKey, &o.ValueKind, &o.ValueText); err != nil {
 			return nil, err
 		}
 		o.ObservedAt = parseTime(obs)
@@ -1012,7 +1021,7 @@ func (s *Store) ListObservations(ctx context.Context, orgID, assetID, cap string
 
 func (s *Store) LatestTelemetry(ctx context.Context, orgID string) ([]model.TelemetryPoint, error) {
 	rows, err := s.query(ctx, `
-SELECT o.asset_id, a.name, o.capability, o.value, o.unit, o.quality, o.source, o.observed_at, o.received_at, a.stale_after_sec
+SELECT o.asset_id, a.name, o.capability, o.value, o.unit, o.quality, o.source, o.observed_at, o.received_at, a.stale_after_sec, o.value_kind, o.value_text
 FROM observations o
 JOIN assets a ON a.id = o.asset_id
 JOIN (
@@ -1032,7 +1041,7 @@ ORDER BY a.name, o.capability
 		var p model.TelemetryPoint
 		var obs, rec string
 		var stale int
-		if err := rows.Scan(&p.AssetID, &p.AssetName, &p.Capability, &p.Value, &p.Unit, &p.Quality, &p.Source, &obs, &rec, &stale); err != nil {
+		if err := rows.Scan(&p.AssetID, &p.AssetName, &p.Capability, &p.Value, &p.Unit, &p.Quality, &p.Source, &obs, &rec, &stale, &p.ValueKind, &p.ValueText); err != nil {
 			return nil, err
 		}
 		p.ObservedAt = parseTime(obs)

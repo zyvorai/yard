@@ -261,11 +261,17 @@ func (e *Engine) IngestObservation(ctx context.Context, orgID string, in model.I
 	if source != "" && in.Source == "" {
 		in.Source = source
 	}
+	kind, num, text, err := classifyObservation(in)
+	if err != nil {
+		return nil, false, err
+	}
 	obs := &model.Observation{
 		OrganizationID: orgID,
 		AssetID:        asset.ID,
 		Capability:     in.Capability,
-		Value:          in.Value,
+		Value:          num,
+		ValueKind:      kind,
+		ValueText:      text,
 		Unit:           in.Unit,
 		Quality:        in.Quality,
 		Source:         in.Source,
@@ -279,7 +285,7 @@ func (e *Engine) IngestObservation(ctx context.Context, orgID string, in model.I
 	if !inserted {
 		return obs, false, nil
 	}
-	health := deriveHealth(in.Capability, in.Value, in.Quality)
+	health := deriveHealth(in.Capability, num, kind, in.Quality)
 	if err := e.Store.TouchAsset(ctx, asset.ID, in.Latitude, in.Longitude, health); err != nil {
 		return obs, true, err
 	}
@@ -291,9 +297,43 @@ func (e *Engine) IngestObservation(ctx context.Context, orgID string, in model.I
 	return obs, true, nil
 }
 
-func deriveHealth(cap string, value float64, quality string) string {
+func classifyObservation(in model.IngestObservation) (kind string, num float64, text string, err error) {
+	kind = in.ValueKind
+	if kind == "" {
+		kind = "number"
+	}
+	switch kind {
+	case "number":
+		return kind, in.Value, "", nil
+	case "bool":
+		text = strings.ToLower(strings.TrimSpace(in.ValueText))
+		if text != "true" && text != "false" {
+			return "", 0, "", fmt.Errorf("bool observation needs value_text true or false")
+		}
+		if text == "true" {
+			return kind, 1, text, nil
+		}
+		return kind, 0, text, nil
+	case "text":
+		text = strings.TrimSpace(in.ValueText)
+		if text == "" {
+			return "", 0, "", fmt.Errorf("text observation needs value_text")
+		}
+		if len(text) > 500 {
+			text = text[:500]
+		}
+		return kind, 0, text, nil
+	default:
+		return "", 0, "", fmt.Errorf("value_kind must be number, bool, or text")
+	}
+}
+
+func deriveHealth(cap string, value float64, kind, quality string) string {
 	if quality == "bad" || quality == "uncertain" {
 		return "degraded"
+	}
+	if kind != "" && kind != "number" {
+		return "healthy"
 	}
 	switch strings.ToLower(cap) {
 	case "temperature":
@@ -319,6 +359,9 @@ func deriveHealth(cap string, value float64, quality string) string {
 // entry, and soft-vs-hard severity is just the operator's choice of the
 // existing "notify" vs "open_incident" action.
 func (e *Engine) applyAutomations(ctx context.Context, orgID string, asset *model.Asset, obs *model.Observation) error {
+	if obs.ValueKind != "" && obs.ValueKind != "number" {
+		return nil
+	}
 	autos, err := e.Store.ListAutomations(ctx, orgID)
 	if err != nil {
 		return err
