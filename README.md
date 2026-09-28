@@ -1,118 +1,115 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/social/yard-share-card-dark.png">
+  <img src="docs/social/yard-share-card.png" alt="Yard — open asset and operations platform" width="820">
+</picture>
+
 # Yard
 
-[![CI](https://github.com/zyvorai/yard/actions/workflows/ci.yml/badge.svg)](https://github.com/zyvorai/yard/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Docs](https://img.shields.io/badge/docs-zyvorai.github.io%2Fyard-0a84ff)](https://zyvorai.github.io/yard/)
-[![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-00ADD8?logo=go&logoColor=white)](go.mod)
-[![React 18](https://img.shields.io/badge/react-18-0a84ff?logo=react&logoColor=white)](web/package.json)
+### Open asset and operations platform.
 
-![Yard — open asset and operations platform](docs/social/yard-share-card.png)
+Devices, sites, telemetry, incidents and work orders.<br>
+Zyvor connectors are optional. **Yard runs alone.**
 
-**Open asset and operations platform — devices, sites, telemetry, incidents, and work orders. Zyvor connectors are optional. Yard runs alone.**
+[![CI](https://img.shields.io/github/actions/workflow/status/zyvorai/yard/ci.yml?branch=main&style=flat-square&labelColor=1d1d1f&label=CI)](https://github.com/zyvorai/yard/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-0071e3?style=flat-square&labelColor=1d1d1f)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-zyvorai.github.io%2Fyard-0071e3?style=flat-square&labelColor=1d1d1f)](https://zyvorai.github.io/yard/)
+[![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-0071e3?style=flat-square&labelColor=1d1d1f&logo=go&logoColor=white)](go.mod)
+[![React 18](https://img.shields.io/badge/react-18-0071e3?style=flat-square&labelColor=1d1d1f&logo=react&logoColor=white)](web/package.json)
 
-📖 **[Read the full docs](https://zyvorai.github.io/yard/)** — quickstart, architecture, console features, API, security, and a product tour.
+[**Quick start**](#quick-start) · [**Product tour**](https://zyvorai.github.io/yard/tour) · [**Compare**](https://zyvorai.github.io/yard/compare) · [**Docs**](docs/index.md) · [**Architecture**](docs/architecture.md)
 
-**[Quick start](#quick-start)** · **[Product tour](https://zyvorai.github.io/yard/tour)** · **[Compare](https://zyvorai.github.io/yard/compare)** · **[Full docs](https://zyvorai.github.io/yard/)**
+</div>
+
+---
+
+## One registry for physical operations
 
 Yard is a standalone registry for physical operations. A device is one asset kind; vehicles, machines, sensors, and equipment share the same model. Device Agent, Nodra, Fleet, and OTA plug in when you need them — you can install Yard without installing anything else in the Zyvor suite.
 
 Yard stays honest when data goes quiet: observations carry source, unit, quality, and timestamps; missed heartbeats mark assets **stale** rather than healthy; automations open incidents with severity policies and runbooks so operators know what to do next.
 
+<div align="center">
+
 ![Yard Overview — asset health, incidents, and recent activity](docs/ux/00-overview.png)
 
-## Contents
+</div>
 
-- [Dashboard gallery](#dashboard-gallery)
-- [What Yard does](#what-yard-does)
-- [Live ops and automations](#live-ops-and-automations)
-- [Registry, map, and bulk IO](#registry-map-and-bulk-io)
-- [Incidents, severity policies, and runbooks](#incidents-severity-policies-and-runbooks)
-- [Users, roles, and API keys](#users-roles-and-api-keys)
-- [Boundaries](#boundaries)
-- [Architecture](#architecture)
-- [Repository](#repository)
-- [Prerequisites](#prerequisites)
-- [Quick start](#quick-start)
-- [Data model](#data-model)
-- [Interface](#interface)
-- [Tests](#tests)
-- [Docs and roadmap](#docs-and-roadmap)
-- [License](#license)
+<table>
+<tr>
+<td valign="top" width="33%">
+<b>Registry and map</b><br>
+Devices, vehicles, machines, sensors and equipment share one model. CSV/JSON import-export and a clustered MapLibre map.<br>
+<a href="docs/features.md#registry-map-and-bulk-io">Registry</a>
+</td>
+<td valign="top" width="33%">
+<b>Telemetry you can trust</b><br>
+Observations carry source, unit, quality and timestamps. Missed heartbeats mark assets stale, not healthy.<br>
+<a href="docs/features.md#live-ops-and-automations">Live ops</a>
+</td>
+<td valign="top" width="33%">
+<b>Incidents and runbooks</b><br>
+A threshold or stale automation opens an incident. The highest-priority severity policy attaches its runbook.<br>
+<a href="docs/features.md#incidents-severity-policies-and-runbooks">Incidents</a>
+</td>
+</tr>
+<tr>
+<td valign="top" width="33%">
+<b>Automations</b><br>
+Threshold, capability-range or stale triggers open an incident, notify, or call a webhook, Slack, email or PagerDuty.<br>
+<a href="docs/features.md#live-ops-and-automations">Automations</a>
+</td>
+<td valign="top" width="33%">
+<b>Work orders</b><br>
+Inspections, repairs, installations and maintenance, assigned and closed with a recorded resolution.<br>
+<a href="docs/features.md#what-yard-does">What Yard does</a>
+</td>
+<td valign="top" width="33%">
+<b>Users, roles and keys</b><br>
+Viewer, operator and admin roles; per-person API keys; rate-limited logins. An unknown role fails closed to read-only.<br>
+<a href="docs/features.md#users-roles-and-api-keys">Access</a>
+</td>
+</tr>
+</table>
 
 ## Dashboard gallery
 
-Live UI captures from a lab deployment — not mockups. Overview appears above; the rest of the console:
+Live UI captures from a lab deployment — not mockups. Full tour: [Product tour](https://zyvorai.github.io/yard/tour) · [Console features](https://zyvorai.github.io/yard/docs/guides/console).
 
-![Assets — search, kinds, health, bulk import/export](docs/ux/01-assets.png)
+<table>
+<tr>
+<td width="33%"><img src="docs/ux/01-assets.png" alt="Assets — search, kinds, health, bulk import/export"><br><sub>Assets — search, kinds, health, bulk import/export</sub></td>
+<td width="33%"><img src="docs/ux/02-sites.png" alt="Sites — factories, warehouses, locations"><br><sub>Sites — factories, warehouses, locations</sub></td>
+<td width="33%"><img src="docs/ux/03-map.png" alt="Map — MapLibre full-bleed with clustered pins"><br><sub>Map — MapLibre full-bleed with clustered pins</sub></td>
+</tr>
+<tr>
+<td width="33%"><img src="docs/ux/04-telemetry.png" alt="Telemetry — freshness, quality, sparklines"><br><sub>Telemetry — freshness, quality, sparklines</sub></td>
+<td width="33%"><img src="docs/ux/05-work-orders.png" alt="Work orders — inspections, repairs, maintenance"><br><sub>Work orders — inspections, repairs, maintenance</sub></td>
+<td width="33%"><img src="docs/ux/06-automations.png" alt="Automations — threshold and stale rules"><br><sub>Automations — threshold and stale rules</sub></td>
+</tr>
+</table>
 
-![Sites — factories, warehouses, locations](docs/ux/02-sites.png)
+## Quick start
 
-![Map — MapLibre full-bleed with clustered pins](docs/ux/03-map.png)
+```bash
+go run ./cmd/yard
+```
 
-![Telemetry — freshness, quality, sparklines](docs/ux/04-telemetry.png)
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080). The default mode is `demo`, with the login `admin@yard.local` / `yard-admin`. Production refuses that login: set `YARD_MODE=production`, `YARD_PUBLIC_URL`, `YARD_SECRET_KEY`, and on an empty database `YARD_BOOTSTRAP_EMAIL` and `YARD_BOOTSTRAP_PASSWORD` ([SECURITY.md](SECURITY.md)).
 
-![Work orders — inspections, repairs, maintenance](docs/ux/05-work-orders.png)
+In another terminal, start the included telemetry simulator:
 
-![Automations — threshold and stale rules](docs/ux/06-automations.png)
+```bash
+export YARD_SIMULATOR_TOKEN=$(cat data/simulator.token)
+go run ./cmd/simulator
+```
 
-Full tour: [Product tour](https://zyvorai.github.io/yard/tour) · console how-to: [Console features](https://zyvorai.github.io/yard/docs/guides/console)
-
-## What Yard does
-
-| Module | What users can do |
-| --- | --- |
-| Overview | Asset health, active work, incidents, recent activity |
-| Assets | Register devices, vehicles, machines, sensors, equipment; CSV/JSON import-export |
-| Sites | Factories, warehouses, offices, customer locations |
-| Map | Clustered locations and stale-or-live status |
-| Telemetry | Measurements, freshness, quality, threshold context |
-| Work orders | Inspections, repairs, installations, maintenance |
-| Incidents | Acknowledge, assign, resolve; severity policies attach runbooks |
-| Automations | Threshold, capability-range, or stale triggers → incident, notify, webhook, Slack, email, or PagerDuty |
-| Integrations | HTTP ingest, simulator, Device Agent; optional Zyvor connectors |
-| Administration | Workspace, users & roles, API keys, severity policies, connector credentials, audit history |
-
-## Live ops and automations
-
-- Background **stale ticker** marks missed heartbeats without waiting for a page refresh
-- Console pages subscribe to live updates with a short-lived SSE ticket (`POST /api/v1/stream/ticket`, then `GET /api/v1/stream?ticket=`). The session token is not placed in the stream URL
-- Optional browser notifications for new **critical** incidents
-- Automations: a literal **threshold**, a capability's own declared **Min/Max range** (no duplicated number to keep in sync), or a **stale** heartbeat, each → open incident, notify, webhook, Slack, email, or PagerDuty
-- Create / enable / delete rules in the Automations console
-- Remote actions carry idempotency keys and expiry. A connector action is queued on a `jobs` row and executed by an in-process worker, with exponential backoff up to 60s and operator retry or cancel; an action with no connector is recorded locally
-
-## Registry, map, and bulk IO
-
-- Asset create / edit / delete with capabilities, custom kinds, and site placement
-- Site create / edit / delete with lat/lng
-- MapLibre full-bleed map with **clustered** GeoJSON pins (click cluster to zoom)
-- Bulk **CSV/JSON** export and import (`GET /api/v1/assets/export`, `POST /api/v1/assets/import`) — upsert by `external_ref`
-- Onboarding wizard, command palette, and tablet-friendly bottom nav
-
-See [Console features](https://zyvorai.github.io/yard/docs/guides/console) and [API](https://zyvorai.github.io/yard/docs/api).
-
-## Incidents, severity policies, and runbooks
-
-When a threshold or stale automation opens an incident, Yard resolves a **severity policy** (highest priority match):
-
-| Match kind | Example | Effect |
-| --- | --- | --- |
-| `capability` | `temperature` | severity + runbook for that signal |
-| `automation` | `Missed heartbeat` | match by automation name |
-| `default` | *(empty value)* | fallback for everything else |
-
-Seeded defaults include a critical temperature runbook and a warning heartbeat checklist. Edit policies under **Administration**; the Incidents detail panel shows the attached runbook. API: `/api/v1/severity-policies`.
-
-## Users, roles, and API keys
-
-- Three roles: **viewer** (read-only), **operator** and **admin** (both can mutate incidents, connectors, remote actions, and the registry). Audit reads require a write role. An empty or unrecognized role fails closed to read-only
-- **Admin → Users**: invite by email (a 72h single-use token). Production sends it with `YARD_SMTP_*` and returns 503 if mail is not configured. Demo without SMTP logs the link. Deactivate rejects the next request; password reset deletes existing sessions
-- **Admin → Sessions**: list and revoke the signed-in user's sessions, or sign out everywhere
-- Self-service **password reset** never reveals whether an email has an account
-- **Admin → Your API keys**: any role can mint a long-lived, per-person `yard_key_...` credential. Connector ingest tokens are separate and hashed. Outbound connector `auth_token` values are encrypted and set with `PUT /api/v1/connectors/{id}/secret`, not returned in connector JSON
-- Login failures are rate-limited per address and email. `GET /api/v1/meta` tells the console whether to show the demo password
+Or run with Docker: `docker compose up --build`. Needs Go 1.27+ and Node 20+; SQLite is built in (no CGO), Postgres is optional. Docker Compose, remote lab deploy, backups and the Device Agent gateway: [Getting started](docs/getting-started.md).
 
 ## Boundaries
+
+Yard owns the operations surface. Everything else stays where it lives.
 
 | Component | Responsibility |
 | --- | --- |
@@ -123,196 +120,28 @@ Seeded defaults include a critical temperature runbook and a warning heartbeat c
 | **OTA connector** | Campaign list display; execution stays elsewhere |
 | **HTTP / simulator** | Zero-dependency evaluation path |
 
-Device Agent reports physical capability. Nodra interprets protocols. Fleet owns desired state. Optional connectors sync when an endpoint and a stored secret are set ([docs/CONNECTORS.md](docs/CONNECTORS.md)). Yard preserves those lines and adds the operations surface. Full contracts: [docs/CONNECTORS.md](docs/CONNECTORS.md).
+Device Agent reports physical capability. Nodra interprets protocols. Fleet owns desired state. Optional connectors sync when an endpoint and a stored secret are set. Full contracts: [docs/CONNECTORS.md](docs/CONNECTORS.md).
 
-## Architecture
+## Go deeper
 
-```text
-                         Browser / curl
-                               |
-                               v
-                    +----------------------+
-                    |      cmd/yard        |
-                    | API + embedded UI    |
-                    | jobs + action worker |
-                    +----------+-----------+
-                               |
-                    SQLite / Postgres
-                               |
-         +---------------------+---------------------+
-         |                     |                     |
-         v                     v                     v
-   HTTP ingest           Included              Device Agent
-   (observations /       simulator             gateway
-    inventory / events)                        (optional)
-         |
-         +---- optional wired: Nodra · Fleet · OTA ----+
-```
+- <a id="what-yard-does"></a><a id="live-ops-and-automations"></a><a id="registry-map-and-bulk-io"></a><a id="incidents-severity-policies-and-runbooks"></a><a id="users-roles-and-api-keys"></a>**Features:** modules, live ops and automations, registry and map, incidents and runbooks, users, roles and API keys — [docs/features.md](docs/features.md).
+- <a id="architecture"></a><a id="repository"></a><a id="data-model"></a>**Architecture:** component diagram, repository map and data model — [docs/architecture.md](docs/architecture.md).
+- <a id="contents"></a><a id="prerequisites"></a><a id="docker-compose"></a><a id="remote-lab-deploy"></a><a id="backups"></a><a id="device-agent-gateway"></a>**Prerequisites and deploy:** [docs/getting-started.md](docs/getting-started.md).
+- <a id="interface"></a><a id="tests"></a>**Interface and tests:** [docs/interface-and-tests.md](docs/interface-and-tests.md).
 
-## Repository
-
-```text
-cmd/yard/              API server + embedded console
-cmd/simulator/         included telemetry simulator
-cmd/agent-gateway/     Device Agent → Yard ingest bridge
-internal/api/          HTTP handlers, RBAC, sessions, secrets
-internal/store/        SQLite / Postgres persistence and migrations
-internal/jobs/         automations, stale ticker, action sweeper
-internal/queue/        durable remote-action worker
-internal/egress/       outbound URL policy
-internal/secrets/      AES-GCM connector secrets
-internal/config/       YARD_MODE and process settings
-internal/seed/         demo or production bootstrap
-internal/sse/          in-process live event hub
-internal/connectors/   Device Agent + Nodra/Fleet/OTA sync dispatch
-internal/platform/     ordered list of later programs (no runtime)
-web/                   React/Vite console
-website/               Docusaurus docs (GitHub Pages)
-docs/ROADMAP.md        feature catalog (Have / Partial / Later)
-docs/PHASES.md         programs 1–16 with shipped versus remaining scope
-docs/CONNECTORS.md     ingest and connector contracts
-docs/ux/               live lab screenshots
-docs/social/           share / OG card
-openapi.yaml           OpenAPI 3.0
-sdk/go, sdk/ts         thin Go and TypeScript API clients
-scripts/ship           remote lab deploy (Fabric-style)
-scripts/backup.sh      SQLite/Postgres backup
-scripts/restore.sh     restore a scripts/backup.sh snapshot
-```
-
-## Prerequisites
-
-Go 1.27+ (`go.mod`) and Node 20+ (the docs site build uses Node 22). SQLite ships with the Go standard toolchain via `modernc.org/sqlite` — no CGO, no system SQLite package required. Postgres is optional (`docker compose --profile postgres`). No other services are required to run Yard standalone.
-
-```bash
-make help
-make ci                         # gofmt, vet, tests
-make status                     # GET /healthz on a running server
-make deploy-remote H=<host> U=sus
-make ship HOST=user@host        # older alias
-```
-
-## Quick start
-
-```bash
-go run ./cmd/yard
-```
-
-Open [http://127.0.0.1:8080](http://127.0.0.1:8080). The default mode is `demo`:
-
-```
-admin@yard.local
-yard-admin
-```
-
-Production refuses that login. Set `YARD_MODE=production`, `YARD_PUBLIC_URL`, `YARD_SECRET_KEY`, and on an empty database `YARD_BOOTSTRAP_EMAIL` and `YARD_BOOTSTRAP_PASSWORD`. Details: [SECURITY.md](SECURITY.md) and [docs/PHASES.md](docs/PHASES.md).
-
-In another terminal:
-
-```bash
-export YARD_SIMULATOR_TOKEN=$(cat data/simulator.token)
-go run ./cmd/simulator
-```
-
-First-use path: seeded workspace → simulator (or Device Agent gateway) → discover assets → inspect health → temperature / missed heartbeat opens an incident with severity policy + runbook → assign a work order → record resolution on the asset timeline.
-
-Console development (Vite proxies `/api` to `:8080`):
-
-```bash
-cd web && npm install && npm run dev
-```
-
-### Docker Compose
-
-```bash
-docker compose up --build
-```
-
-PostgreSQL is optional (SQLite remains the default for `go run` and CI):
-
-```bash
-docker compose --profile postgres up --build
-# Yard on :8081 with YARD_DATABASE_URL=postgres://...
-```
-
-### Remote lab deploy
-
-Same one-command pattern as Fabric/Nodra — cross-compile locally, install a systemd unit, verify `/healthz`:
-
-```bash
-./scripts/ship sus@HOST              # quick redeploy
-./scripts/ship sus@HOST --full       # first install + firewall
-./scripts/ship sus@HOST --with-sim   # also start the simulator
-./scripts/ship sus@HOST --dry-run
-```
-
-Open `http://HOST:18080` (default lab port; override with `--port`). Demo login remains `admin@yard.local` / `yard-admin`.
-
-```bash
-YARD_URL=http://HOST:18080 ./scripts/verify-remote.sh
-```
-
-### Backups
-
-Works against either backend, auto-detected from `YARD_DATABASE_URL` (SQLite via `sqlite3 ... VACUUM INTO`, a live consistent snapshot; Postgres via `pg_dump`/`pg_restore`):
-
-```bash
-./scripts/backup.sh                    # snapshot to backups/yard-<timestamp>.db|.dump
-./scripts/restore.sh backups/yard-....db   # restores; saves the current file as *.before-restore first
-```
-
-### Device Agent gateway
-
-```bash
-export YARD_INGEST_TOKEN=$(cat data/ingest.token)
-export DEVICE_AGENT_URL=http://127.0.0.1:9188
-go run ./cmd/agent-gateway
-```
-
-The gateway reads the agent locally and publishes normalized inventory and observations. From Integrations you can also run `inventory.refresh` and `diagnostics.read`. It does not require inbound access to every remote device.
-
-## Data model
-
-Organization · User · Session · APIKey · Site · Location · Asset · Capability · Observation ·
-Event · WorkOrder · Incident · SeverityPolicy · ActionRequest · Job ·
-Connector · ConnectorSecret · Automation
-
-Every observation stores **source**, **unit**, **observed_at**, **received_at**, **quality**, optional **quality_reason** / **uncertainty** / **calibration_state** / **sequence_num**, and a **value_kind** of number, bool, text, json, ref, enum, event, or histogram. Numeric rows older than 24 hours become hourly rollups. Set `YARD_MQTT_URL` to subscribe, or post Prometheus remote write and OTLP JSON to the ingest routes. Saved dashboards are panels of one asset and one capability. Severity policies map capability or automation matches to incident severity and runbook text. Connector actions are queued, expire, carry an idempotency key, and record an outcome when the worker finishes. Locations, templates, catalogs, and links are in the API and console.
-
-## Interface
-
-Apple-inspired, original identity:
-
-- White and soft-gray surfaces, dark type, generous spacing
-- Apple-blue (`#0071e3` / `#0a84ff` in dark mode) for primary actions and selected states; the Zyvor mark keeps its own brand orange
-- Compact labeled sidebar; asset detail panel that does not replace the list
-- Dark, searchable diagnostics
-- System fonts (no CDN), visible keyboard focus, reduced-motion support
-- Skip-to-content link; dialogs trap focus and close on Escape
-
-## Tests
-
-```bash
-go test ./...
-cd web && npm test
-```
-
-Or `make test`. Release gates cover tenant isolation, connector authentication, duplicate observations, stale telemetry, bulk import/export, severity policies, the health → incident → work order → resolve workflow, capability-range alarms, the full invite/role/deactivate/API-key lifecycle, and that the SSE stream survives the request-logging middleware chain (not just the handler in isolation). The Go and TypeScript SDKs (`sdk/`) are each verified against a real running server.
+<a id="docs-and-roadmap"></a>
 
 ## Docs and roadmap
 
 | Resource | Link |
 | --- | --- |
+| Documentation index | [docs/index.md](docs/index.md) |
 | Product docs | [zyvorai.github.io/yard](https://zyvorai.github.io/yard/) |
 | Compare | [Yard Core vs. Zyvor Enterprise](https://zyvorai.github.io/yard/compare) |
 | Feature catalog | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | Programs 1–16 | [docs/PHASES.md](docs/PHASES.md) |
-| Connectors | [docs/CONNECTORS.md](docs/CONNECTORS.md) |
-| OpenAPI | [openapi.yaml](openapi.yaml) |
-| SDKs | [sdk/](sdk/) — Go and TypeScript |
+| OpenAPI · SDKs | [openapi.yaml](openapi.yaml) · [sdk/](sdk/) — Go and TypeScript |
 | Security | [SECURITY.md](SECURITY.md) · [docs site](https://zyvorai.github.io/yard/docs/security) |
-
-Shipped epics cover programs 1–16 in [docs/PHASES.md](docs/PHASES.md): production modes and RBAC, durable actions, maintenance and field ops, telemetry (including optional Timescale), incidents, playbooks, twin and geofence, connectors, intelligence, identity, HA, energy, packs, releases, and the community edition boundary. Logistics routing stays deferred.
 
 ## License
 
