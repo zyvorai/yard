@@ -4,6 +4,9 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-zyvorai.github.io%2Fyard-0a84ff)](https://zyvorai.github.io/yard/)
 
+[![Book a demo](https://img.shields.io/badge/Book_a_demo-0071e3?style=for-the-badge)](https://zyvor.dev/schedule?utm_source=github&utm_medium=yard&utm_campaign=readme_hero)
+[![30-day PoC](https://img.shields.io/badge/30--day_PoC-1d1d1f?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=yard&utm_campaign=readme_hero)
+
 ![Yard — open asset and operations platform](docs/social/yard-share-card.png)
 
 **Open asset and operations platform — devices, sites, telemetry, incidents, and work orders. Zyvor connectors are optional. Yard runs alone.**
@@ -279,4 +282,6 @@ use at no charge, subject to Apache-2.0 (preserve notices / NOTICE where require
 ### Enterprise
 
 Production support, SLAs, and Zyvor Enterprise products are licensed separately.
-Contact [sales@zyvor.dev](mailto:sales@zyvor.dev) or see [zyvor.dev](https://zyvor.dev).
+Contact [sales@zyvor.dev](mailto:sales@zyvor.dev) or see [zyvor.dev](https://zyvor.dev?utm_source=github&utm_medium=yard&utm_campaign=readme_footer).
+
+**Next step:** [Book a demo](https://zyvor.dev/schedule?utm_source=github&utm_medium=yard&utm_campaign=readme_footer) · [30-day PoC](https://zyvor.dev/poc?utm_source=github&utm_medium=yard&utm_campaign=readme_footer)
