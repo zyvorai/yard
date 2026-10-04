@@ -1,9 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/social/yard-share-card-dark.png">
-  <img src="docs/social/yard-share-card.png" alt="Yard — open asset and operations platform" width="820">
-</picture>
+<img src="docs/social/yard-hero-dark.jpg" alt="Yard - Every asset, every site. Stale is never healthy." width="100%">
 
 # Yard
 
