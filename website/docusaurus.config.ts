@@ -69,7 +69,8 @@ const config: Config = {
   themeConfig: {
     image: 'yard-share-card.png',
     colorMode: {
-      respectPrefersColorScheme: true,
+      defaultMode: 'dark',
+      respectPrefersColorScheme: false,
     },
     navbar: {
       title: 'Yard',
