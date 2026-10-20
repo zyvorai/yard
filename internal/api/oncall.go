@@ -21,7 +21,11 @@ func (s *Server) oncall(w http.ResponseWriter, r *http.Request, u *model.User) {
 			return
 		}
 		var row model.OnCall
-		if err := readJSON(r, &row); err != nil || row.UserID == "" || row.EndsAt.IsZero() || !row.EndsAt.After(row.StartsAt) {
+		err := readJSON(r, &row)
+		if err == nil && row.StartsAt.IsZero() {
+			row.StartsAt = time.Now().UTC()
+		}
+		if err != nil || row.UserID == "" || row.EndsAt.IsZero() || !row.EndsAt.After(row.StartsAt) {
 			writeJSON(w, 400, map[string]string{"error": "user_id, starts_at, and ends_at required"})
 			return
 		}
@@ -29,9 +33,6 @@ func (s *Server) oncall(w http.ResponseWriter, r *http.Request, u *model.User) {
 		if err != nil || person.OrganizationID != u.OrganizationID {
 			writeJSON(w, 400, map[string]string{"error": "user not found"})
 			return
-		}
-		if row.StartsAt.IsZero() {
-			row.StartsAt = time.Now().UTC()
 		}
 		if err := s.Store.CreateOnCall(r.Context(), u.OrganizationID, &row); err != nil {
 			writeJSON(w, 500, map[string]string{"error": err.Error()})

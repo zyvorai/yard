@@ -54,7 +54,7 @@ func (s *Server) locationFloorplan(w http.ResponseWriter, r *http.Request, u *mo
 			writeJSON(w, 404, map[string]string{"error": "not found"})
 			return
 		}
-		http.ServeFile(w, r, path)
+		serveFloorplan(w, r, path)
 	case http.MethodPost:
 		if !s.requireWrite(w, u) {
 			return
@@ -97,4 +97,29 @@ func floorplanPath(dataDir, orgID, id string) (string, error) {
 		return "", os.ErrInvalid
 	}
 	return filepath.Join(dataDir, "floorplans", orgID, id), nil
+}
+
+// serveFloorplan serves an uploaded floorplan without letting the browser
+// treat it as active content: only raster image types are served inline,
+// everything else is forced to a download.
+func serveFloorplan(w http.ResponseWriter, r *http.Request, path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	defer f.Close()
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(f, head)
+	ct := http.DetectContentType(head[:n])
+	switch ct {
+	case "image/png", "image/jpeg", "image/gif", "image/webp":
+	default:
+		ct = "application/octet-stream"
+		w.Header().Set("Content-Disposition", "attachment")
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	http.ServeFile(w, r, path)
 }
