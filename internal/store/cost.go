@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"sort"
 	"time"
 )
 
@@ -98,14 +99,18 @@ func (s *Store) CostReport(ctx context.Context, orgID string, now time.Time) (Co
 	}
 	out.CarbonGrams = kwh * float64(gramsPer)
 	if len(daily) > 0 {
+		days := make([]string, 0, len(daily))
+		for d := range daily {
+			days = append(days, d)
+		}
+		sort.Strings(days)
+		if len(days) > 7 {
+			days = days[len(days)-7:]
+		}
 		var sum float64
-		n := 0
-		for _, v := range daily {
-			sum += v
-			n++
-			if n == 7 {
-				break
-			}
+		n := len(days)
+		for _, d := range days {
+			sum += daily[d]
 		}
 		out.ForecastCents = int64(sum / float64(n) * 7)
 	}

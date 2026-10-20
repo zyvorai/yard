@@ -43,3 +43,45 @@ func TestTariffCarbonAndForecast(t *testing.T) {
 		t.Fatalf("%+v", report)
 	}
 }
+
+func TestForecastUsesMostRecentSevenDays(t *testing.T) {
+	st, err := Open("file:forecast?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	org, err := st.CreateOrganization(t.Context(), "Ops", "ops-forecast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetEnergyCentsPerKWh(t.Context(), org.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	asset := &model.Asset{OrganizationID: org.ID, Name: "Meter", Kind: "equipment"}
+	if err := st.UpsertAsset(t.Context(), asset); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	// 30 old days at 1 kWh, then the most recent 7 days at 10 kWh.
+	for d := 0; d < 37; d++ {
+		v := 1.0
+		if d < 7 {
+			v = 10
+		}
+		if _, err := st.InsertObservation(t.Context(), &model.Observation{
+			OrganizationID: org.ID, AssetID: asset.ID, Capability: "energy_kwh", Value: v, ValueKind: "number",
+			ObservedAt: now.AddDate(0, 0, -d),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 20; i++ {
+		report, err := st.CostReport(t.Context(), org.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.ForecastCents != 70 {
+			t.Fatalf("run %d forecast %d, want 70", i, report.ForecastCents)
+		}
+	}
+}

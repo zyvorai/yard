@@ -89,3 +89,26 @@ func TestIncidentParentSLAOnCallAndTimeline(t *testing.T) {
 		t.Fatalf("timeline %+v", notes)
 	}
 }
+
+func TestOnCallDefaultsStartBeforeValidating(t *testing.T) {
+	st, err := store.Open("file:oncall-default?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	res, err := seed.Bootstrap(t.Context(), st)
+	if err != nil || res.User == nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(New(st, nil).Handler())
+	defer ts.Close()
+	admin := loginToken(t, ts.URL, seed.DemoEmail, seed.DemoPassword)
+	me := getJSON[model.User](t, ts.URL, "/api/v1/auth/me", admin)
+	past := time.Now().UTC().Add(-time.Hour)
+	resp := authed(t, http.MethodPost, ts.URL+"/api/v1/oncall", admin, map[string]any{"user_id": me.ID, "ends_at": past})
+	resp.Body.Close()
+	if resp.StatusCode != 400 {
+		t.Fatalf("ends_at in the past with omitted starts_at: status %d, want 400", resp.StatusCode)
+	}
+	postJSON[model.OnCall](t, ts.URL, "/api/v1/oncall", admin, map[string]any{"user_id": me.ID, "ends_at": time.Now().UTC().Add(time.Hour)}, 201)
+}
