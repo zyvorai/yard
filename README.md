@@ -24,6 +24,8 @@
 
 </div>
 
+[Client overview (PDF)](docs/Yard-Client-Overview.pdf)
+
 ---
 
 ## What's new
