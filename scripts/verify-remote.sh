@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 #
 # Smoke a deployed Yard instance (login + assets; optional incident gate).
 #   YARD_URL=http://HOST:8080 ./scripts/verify-remote.sh
