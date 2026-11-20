@@ -1,0 +1,20 @@
+name: data-center
+templates:
+  - name: Rack
+    kind: equipment
+    capabilities: [temperature, power_kw]
+dashboard:
+  name: Hall
+  capabilities: [temperature, power_kw]
+automations:
+  - name: Hot aisle
+    capability: temperature
+    operator: gt
+    threshold: 30
+    action: open_incident
+  - name: High power
+    capability: power_kw
+    operator: gt
+    threshold: 12
+    action: notify
+work_order: Inspect rack

@@ -1,0 +1,20 @@
+name: manufacturing
+templates:
+  - name: Press
+    kind: machine
+    capabilities: [vibration, temperature]
+dashboard:
+  name: Line health
+  capabilities: [vibration, temperature]
+automations:
+  - name: High vibration
+    capability: vibration
+    operator: gt
+    threshold: 8
+    action: open_incident
+  - name: Hot press
+    capability: temperature
+    operator: gt
+    threshold: 80
+    action: notify
+work_order: Inspect press

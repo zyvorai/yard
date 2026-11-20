@@ -1,0 +1,155 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+import {themes as prismThemes} from 'prism-react-renderer';
+import type {Config} from '@docusaurus/types';
+import type * as Preset from '@docusaurus/preset-classic';
+
+const config: Config = {
+  title: 'Yard',
+  tagline: 'Register assets. See health. Close the work.',
+  favicon: 'img/favicon.svg',
+
+  // v4 future flags break the legacy `:::note`/`:::caution` admonition
+  // syntax used throughout docs/ — every admonition silently rendered as
+  // raw text instead of a styled callout. Keep this false until the docs
+  // migrate to the new directive syntax.
+  future: {
+    v4: false,
+  },
+
+  url: 'https://zyvorai.github.io',
+  baseUrl: '/yard/',
+
+  organizationName: 'zyvorai',
+  projectName: 'yard',
+
+  onBrokenLinks: 'throw',
+
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
+
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en'],
+  },
+
+  // Serve lab screenshots and social cards from the repo root so README and
+  // the docs site share one physical copy of each image.
+  staticDirectories: ['static', '../docs/ux', '../docs/social'],
+
+  presets: [
+    [
+      'classic',
+      {
+        docs: {
+          sidebarPath: './sidebars.ts',
+          editUrl: 'https://github.com/zyvorai/yard/tree/main/website/',
+        },
+        blog: false,
+        theme: {
+          customCss: './src/css/custom.css',
+        },
+      } satisfies Preset.Options,
+    ],
+  ],
+
+  // Offline local search index — no external account needed, unlike
+  // Algolia, which fits an OSS project better.
+  themes: [
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        hashed: true,
+        indexPages: true,
+      },
+    ],
+  ],
+
+  themeConfig: {
+    image: 'yard-share-card.png',
+    colorMode: {
+      defaultMode: 'dark',
+      respectPrefersColorScheme: false,
+    },
+    navbar: {
+      title: 'Yard',
+      logo: {
+        alt: 'Yard',
+        src: 'img/favicon.svg',
+      },
+      items: [
+        {
+          type: 'docSidebar',
+          sidebarId: 'docsSidebar',
+          position: 'left',
+          label: 'Docs',
+        },
+        {
+          to: '/tour',
+          position: 'left',
+          label: 'Tour',
+        },
+        {
+          href: 'https://github.com/zyvorai/yard',
+          label: 'GitHub',
+          position: 'right',
+        },
+        {
+          href: 'https://zyvor.dev',
+          label: 'Enterprise',
+          position: 'right',
+        },
+      ],
+    },
+    footer: {
+      style: 'dark',
+      links: [
+        {
+          title: 'Docs',
+          items: [
+            {label: 'Product tour', to: '/tour'},
+            {label: 'Quickstart', to: '/docs/getting-started/quickstart'},
+            {label: 'Architecture', to: '/docs/core-concepts/architecture'},
+            {label: 'Console features', to: '/docs/guides/console'},
+            {label: 'Connectors', to: '/docs/guides/connectors'},
+            {label: 'Deploy', to: '/docs/guides/deploy'},
+            {label: 'API', to: '/docs/api'},
+            {label: 'Security', to: '/docs/security'},
+          ],
+        },
+        {
+          title: 'Project',
+          items: [
+            {label: 'GitHub', href: 'https://github.com/zyvorai/yard'},
+            {
+              label: 'Roadmap',
+              href: 'https://github.com/zyvorai/yard/blob/main/docs/ROADMAP.md',
+            },
+            {
+              label: 'License (Zyvor Production 1.0)',
+              href: 'https://github.com/zyvorai/yard/blob/main/LICENSE',
+            },
+          ],
+        },
+        {
+          title: 'Zyvor Enterprise',
+          items: [
+            {label: 'zyvor.dev', href: 'https://zyvor.dev'},
+            {label: 'sales@zyvor.dev', href: 'mailto:sales@zyvor.dev'},
+          ],
+        },
+      ],
+      copyright: `Copyright © ${new Date().getFullYear()} Zyvor. Yard is licensed under the Zyvor Production License v1.0.`,
+    },
+    prism: {
+      theme: prismThemes.github,
+      darkTheme: prismThemes.dracula,
+    },
+  } satisfies Preset.ThemeConfig,
+};
+
+export default config;

@@ -1,0 +1,341 @@
+/**
+ * Any CSS included here will be global. The classic template
+ * bundles Infima by default. Infima is a CSS framework designed to
+ * work well for content-centric websites.
+ *
+ * Design system: large type + generous whitespace + minimal chrome,
+ * in the spirit of Apple's product pages — adapted for a docs site
+ * (readable article pages, not just a marketing hero). Shared across
+ * the whole Zyvor docs-site family; keep repo-specific overrides out
+ * of this file.
+ */
+
+/* Self-hosted Inter (variable font) — SF-Pro-like fallback for non-Apple
+   devices, no runtime CDN call. Relative path (not an absolute /-rooted
+   one) so webpack's asset pipeline resolves it as a real file and emits
+   a correctly baseUrl-prefixed, hashed URL in the production build. */
+@font-face {
+  font-family: 'Inter';
+  src: url('../../static/fonts/Inter-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Apple-blue palette — Zyvor docs-site family (same as Netra).
+   The console (web/) now shares this same Apple-blue accent. */
+:root {
+  --ifm-color-primary: #0071e3;
+  --ifm-color-primary-dark: #0064cc;
+  --ifm-color-primary-darker: #005bbf;
+  --ifm-color-primary-darkest: #004a99;
+  --ifm-color-primary-light: #1a7fe6;
+  --ifm-color-primary-lighter: #338ce9;
+  --ifm-color-primary-lightest: #66a8ef;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+
+  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, 'Inter',
+    'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --ifm-heading-font-weight: 600;
+  --ifm-line-height-base: 1.65;
+
+  /* Generous, Apple-esque section rhythm — used by hero/section wrappers
+     in src/pages, not by Infima directly. */
+  --zv-section-space: clamp(4rem, 9vw, 9rem);
+  --zv-hero-space: clamp(5rem, 12vw, 11rem);
+
+  /* "Liquid Glass" materials — same blur/saturate/alpha as the console
+     (web/src/styles/app.css) so both surfaces read as one family. */
+  --zv-glass-thin-bg: rgba(255, 255, 255, 0.45);
+  --zv-glass-thin-blur: saturate(180%) blur(20px);
+  --zv-glass-regular-bg: rgba(255, 255, 255, 0.65);
+  --zv-glass-regular-blur: saturate(170%) blur(28px);
+  --zv-glass-thick-bg: rgba(255, 255, 255, 0.85);
+  --zv-glass-thick-blur: saturate(160%) blur(36px);
+
+  /* Concentric radius scale — matches the console's scale exactly. */
+  --zv-radius-xl: 28px;
+  --zv-radius-lg: 18px;
+  --zv-radius-md: 12px;
+  --zv-radius-sm: 8px;
+  --zv-radius-pill: 999px;
+
+  /* Capsule buttons everywhere — the single clearest "Liquid Glass" tell,
+     cascades to every .button on every page via Infima's own extension
+     point rather than fighting .button's specificity directly. */
+  --ifm-button-border-radius: var(--zv-radius-pill);
+}
+
+
+/* For readability concerns, you should choose a lighter palette in dark mode. */
+[data-theme='dark'] {
+  --ifm-color-primary: #0a84ff;
+  --ifm-color-primary-dark: #0074e6;
+  --ifm-color-primary-darker: #0068cc;
+  --ifm-color-primary-darkest: #0055a8;
+  --ifm-color-primary-light: #3399ff;
+  --ifm-color-primary-lighter: #52a6ff;
+  --ifm-color-primary-lightest: #85c0ff;
+  --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.1);
+
+  --zv-glass-thin-bg: rgba(30, 30, 32, 0.35);
+  --zv-glass-regular-bg: rgba(30, 30, 32, 0.55);
+  --zv-glass-thick-bg: rgba(30, 30, 32, 0.75);
+}
+
+/* The hero band itself stays pure black with white text regardless of
+   site theme — apple.com's product-page hero treatment, not a
+   light/dark-mode-dependent color. */
+.hero--primary {
+  --ifm-hero-text-color: #f5f5f7;
+  background: #000;
+}
+
+.hero--primary .button--secondary {
+  color: #000;
+  background: #f5f5f7;
+  border-color: #f5f5f7;
+}
+
+.hero--primary .button--secondary:hover {
+  background: #ffffff;
+  border-color: #ffffff;
+}
+
+.hero--primary .button--outline.button--secondary {
+  color: #f5f5f7;
+  background: transparent;
+  border-color: rgba(245, 245, 247, 0.4);
+}
+
+.hero--primary .button--outline.button--secondary:hover {
+  border-color: #f5f5f7;
+}
+
+/* ---------------------------------------------------------------------
+ * Minimal nav: apple.com's persistent black top bar — thin, translucent,
+ * always dark regardless of the page's light/dark theme.
+ * ------------------------------------------------------------------- */
+.navbar {
+  height: 4.5rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: var(--zv-glass-regular-blur);
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.navbar__brand,
+.navbar__link,
+.navbar__title {
+  color: #f5f5f7;
+}
+
+.navbar__link:hover {
+  color: #ffffff;
+}
+
+.navbar__brand {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.navbar__items--right .navbar__link {
+  font-weight: 500;
+}
+
+/* Docusaurus's light/dark toggle icon defaults to a dark glyph — force it
+   light so it's visible on the always-black navbar. */
+.navbar [class*='toggle'] svg {
+  color: #f5f5f7;
+}
+
+/* ---------------------------------------------------------------------
+ * Hero / section typography used by src/pages/index.tsx across repos.
+ * ------------------------------------------------------------------- */
+.hero__title {
+  font-size: clamp(2.75rem, 6.5vw, 5.5rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+}
+
+/* Apple's real display type tightens further as it scales up. */
+@media (min-width: 1200px) {
+  .hero__title {
+    letter-spacing: -0.035em;
+  }
+}
+
+.hero__subtitle {
+  font-size: clamp(1.05rem, 1.6vw, 1.375rem);
+  font-weight: 400;
+  line-height: 1.5;
+  /* Always on the forced-black hero background (see .hero--primary above),
+     so this stays a fixed light gray rather than a theme-dependent token. */
+  color: #a1a1a6;
+  max-width: 42rem;
+}
+
+/* Scroll-reveal: see src/components/Reveal. Respects prefers-reduced-motion. */
+.zv-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+
+.zv-reveal--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zv-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Docs article pages: more air, bigger headings, quieter sidebar.
+ * ------------------------------------------------------------------- */
+article .markdown h1 {
+  font-size: 2.5rem;
+  letter-spacing: -0.02em;
+  margin-bottom: 1.5rem;
+}
+
+article .markdown h2 {
+  font-size: 1.75rem;
+  letter-spacing: -0.015em;
+  margin-top: 3rem;
+}
+
+article .markdown h3 {
+  font-size: 1.3rem;
+  letter-spacing: -0.01em;
+  margin-top: 2.25rem;
+}
+
+article .markdown p,
+article .markdown li {
+  font-size: 1.0625rem;
+}
+
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--ifm-color-emphasis-200) !important;
+}
+
+.menu__link {
+  font-size: 0.9rem;
+  border-radius: var(--zv-radius-md);
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 600;
+}
+
+.theme-doc-markdown {
+  max-width: 46rem;
+}
+
+/* ---------------------------------------------------------------------
+ * Admonitions: quiet Apple-Support-style callouts — a slim accent
+ * border-left instead of Infima's heavy color-bar fill.
+ * ------------------------------------------------------------------- */
+.theme-admonition {
+  border-radius: var(--zv-radius-lg);
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-left-width: 3px;
+  background: var(--ifm-color-emphasis-100);
+  box-shadow: none;
+}
+
+.theme-admonition-note,
+.theme-admonition-info {
+  border-left-color: var(--ifm-color-primary);
+}
+
+.theme-admonition-tip {
+  border-left-color: var(--ifm-color-success);
+}
+
+.theme-admonition-caution {
+  border-left-color: var(--ifm-color-warning);
+}
+
+.theme-admonition-danger {
+  border-left-color: var(--ifm-color-danger);
+}
+
+.theme-admonition .admonition-heading {
+  font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------------
+ * Breadcrumbs: small, gray trail — not full-size blue links.
+ * ------------------------------------------------------------------- */
+.breadcrumbs__item {
+  font-size: 0.8rem;
+}
+
+.breadcrumbs__link {
+  color: var(--ifm-color-emphasis-600);
+  background: transparent;
+}
+
+.breadcrumbs__link:hover {
+  color: var(--ifm-color-emphasis-900);
+  background: var(--ifm-color-emphasis-100);
+}
+
+.breadcrumbs__item--active .breadcrumbs__link {
+  color: var(--ifm-font-color-base);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------
+ * Right-rail "On this page" TOC: minimal, quiet inactive links vs. a
+ * bold active one.
+ * ------------------------------------------------------------------- */
+.table-of-contents {
+  font-size: 0.82rem;
+  border-left: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.table-of-contents__link {
+  color: var(--ifm-color-emphasis-600);
+}
+
+.table-of-contents__link--active {
+  color: var(--ifm-font-color-base);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------
+ * Docs sidebar categories: uppercase, letter-spaced, like Apple
+ * Support's topic groupings — leaf links stay normal case.
+ * ------------------------------------------------------------------- */
+.menu__list-item-collapsible > .menu__link {
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--ifm-color-emphasis-600);
+}
+
+/* ---------------------------------------------------------------------
+ * Local search input: a translucent pill matching the black navbar,
+ * in place of Infima's default boxy search field.
+ * ------------------------------------------------------------------- */
+.navbar__search-input {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 999px !important;
+  color: #f5f5f7 !important;
+}
+
+.navbar__search-input::placeholder {
+  color: rgba(245, 245, 247, 0.6) !important;
+}

@@ -1,0 +1,2391 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+package api
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/csv"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/zyvorai/yard/internal/config"
+	"github.com/zyvorai/yard/internal/connectors"
+	"github.com/zyvorai/yard/internal/idgen"
+	"github.com/zyvorai/yard/internal/jobs"
+	"github.com/zyvorai/yard/internal/mail"
+	"github.com/zyvorai/yard/internal/maintain"
+	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/queue"
+	"github.com/zyvorai/yard/internal/secrets"
+	"github.com/zyvorai/yard/internal/sse"
+	"github.com/zyvorai/yard/internal/store"
+	"github.com/zyvorai/yard/internal/totp"
+	"github.com/zyvorai/yard/internal/version"
+	"golang.org/x/crypto/bcrypt"
+)
+
+type Server struct {
+	Store    *store.Store
+	Engine   *jobs.Engine
+	Hub      *sse.Hub
+	Static   fs.FS
+	Log      *slog.Logger
+	Dispatch *connectors.Dispatcher
+	Queue    *queue.Worker
+	Runtime  config.Config
+	tokens   map[string]string
+	limiter  *ingestLimiter
+	metrics  *metrics
+}
+
+func New(st *store.Store, logger *slog.Logger) *Server {
+	return NewWith(st, logger, config.DemoConfig())
+}
+
+func NewWith(st *store.Store, logger *slog.Logger, cfg config.Config) *Server {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if cfg.Mode == "" {
+		cfg = config.DemoConfig()
+	}
+	if cfg.Egress == nil {
+		cfg.Egress = config.DemoConfig().Egress
+	}
+	if len(cfg.SecretKey) != 32 {
+		key, err := secrets.RandomKey()
+		if err != nil {
+			key = make([]byte, 32)
+		}
+		cfg.SecretKey = key
+	}
+	hub := sse.New()
+	eng := &jobs.Engine{Store: st, Hub: hub, Log: logger, Policy: cfg.Egress, HTTP: cfg.Egress.HTTPClient(8*time.Second, false), Origin: idgen.New("yard")}
+	d := connectors.NewDispatcher(st)
+	d.Mode = cfg.Mode
+	d.AllowInsecureTLS = cfg.AllowInsecureTLS
+	d.Policy = cfg.Egress
+	s := &Server{
+		Store:    st,
+		Engine:   eng,
+		Hub:      hub,
+		Log:      logger,
+		Dispatch: d,
+		Runtime:  cfg,
+		tokens:   map[string]string{},
+		limiter:  newIngestLimiter(120, time.Minute),
+		metrics:  &metrics{version: version.Version},
+	}
+	d.Secret = s.connectorSecret
+	s.Queue = &queue.Worker{Store: st, Dispatch: d, Log: logger}
+	return s
+}
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200); _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("/readyz", s.readyz)
+	mux.HandleFunc("/metrics", s.metricsHandler)
+	mux.HandleFunc("/api/v1/meta", s.meta)
+	mux.HandleFunc("/api/v1/auth/login", s.login)
+	mux.HandleFunc("/api/v1/peers/events", s.peerEvents)
+	mux.HandleFunc("/api/v1/auth/totp/setup", s.withUser(s.totpSetup))
+	mux.HandleFunc("/api/v1/auth/totp/confirm", s.withUser(s.totpConfirm))
+	mux.HandleFunc("/api/v1/auth/logout", s.withUser(s.logout))
+	mux.HandleFunc("/api/v1/auth/sessions", s.withUser(s.sessions))
+	mux.HandleFunc("/api/v1/auth/sessions/", s.withUser(s.sessionItem))
+	mux.HandleFunc("/api/v1/auth/oidc", s.oidcConfig)
+	mux.HandleFunc("/api/v1/auth/oidc/start", s.oidcStart)
+	mux.HandleFunc("/api/v1/auth/oidc/callback", s.oidcCallback)
+	mux.HandleFunc("/api/v1/auth/saml/acs", s.samlACS)
+	mux.HandleFunc("/api/v1/scim/v2/Users", s.scimUsers)
+	mux.HandleFunc("/api/v1/scim/v2/Users/", s.scimUsers)
+	mux.HandleFunc("/api/v1/auth/webauthn/login/start", s.webauthnLoginStart)
+	mux.HandleFunc("/api/v1/auth/webauthn/login/finish", s.webauthnLoginFinish)
+	mux.HandleFunc("/api/v1/auth/me", s.withUser(s.me))
+	mux.HandleFunc("/api/v1/me/prefs", s.withUser(s.mePrefs))
+	mux.HandleFunc("/api/v1/i18n", s.i18n)
+	mux.HandleFunc("/api/v1/orgs", s.withUser(s.orgs))
+	mux.HandleFunc("/api/v1/orgs/switch", s.withUser(s.switchOrg))
+	mux.HandleFunc("/api/v1/catalogs", s.withUser(s.catalogs))
+	mux.HandleFunc("/api/v1/saved-views", s.withUser(s.savedViews))
+	mux.HandleFunc("/api/v1/schedules", s.withUser(s.schedules))
+	mux.HandleFunc("/api/v1/telemetry/export", s.withUser(s.telemetryExport))
+	mux.HandleFunc("/api/v1/auth/accept-invite", s.acceptInvite)
+	mux.HandleFunc("/api/v1/auth/request-reset", s.requestReset)
+	mux.HandleFunc("/api/v1/auth/reset", s.resetPassword)
+	mux.HandleFunc("/api/v1/admin/users", s.withUser(s.adminUsers))
+	mux.HandleFunc("/api/v1/api-keys", s.withUser(s.apiKeys))
+	mux.HandleFunc("/api/v1/overview", s.withUser(s.overview))
+	mux.HandleFunc("/api/v1/geofences", s.withUser(s.geofences))
+	mux.HandleFunc("/api/v1/roles", s.withUser(s.roles))
+	mux.HandleFunc("/api/v1/shifts", s.withUser(s.shifts))
+	mux.HandleFunc("/api/v1/assistant/preview", s.withUser(s.assistantPreview))
+	mux.HandleFunc("/api/v1/assistant/preview/", s.withUser(s.assistantApprove))
+	mux.HandleFunc("/api/v1/auth/webauthn/register/start", s.withUser(s.webauthnRegisterStart))
+	mux.HandleFunc("/api/v1/auth/webauthn/register/finish", s.withUser(s.webauthnRegisterFinish))
+	mux.HandleFunc("/api/v1/reports/cost", s.withUser(s.costReport))
+	mux.HandleFunc("/api/v1/org", s.withUser(s.org))
+	mux.HandleFunc("/api/v1/packs/", s.withUser(s.importPack))
+	mux.HandleFunc("/api/v1/sites", s.withUser(s.sites))
+	mux.HandleFunc("/api/v1/sites/", s.withUser(s.siteItem))
+	mux.HandleFunc("/api/v1/assets", s.withUser(s.assets))
+	mux.HandleFunc("/api/v1/assets/lookup", s.withUser(s.assetLookup))
+	mux.HandleFunc("/api/v1/assets/", s.withUser(s.assetItem))
+	mux.HandleFunc("/api/v1/telemetry/query", s.withUser(s.telemetryQuery))
+	mux.HandleFunc("/api/v1/telemetry", s.withUser(s.telemetry))
+	mux.HandleFunc("/api/v1/compliance/export", s.withUser(s.complianceExport))
+	mux.HandleFunc("/api/v1/events", s.withUser(s.events))
+	mux.HandleFunc("/api/v1/incidents", s.withUser(s.incidents))
+	mux.HandleFunc("/api/v1/incidents/", s.withUser(s.incidentItem))
+	mux.HandleFunc("/api/v1/oncall", s.withUser(s.oncall))
+	mux.HandleFunc("/api/v1/work-orders", s.withUser(s.workOrders))
+	mux.HandleFunc("/api/v1/work-orders/", s.withUser(s.workOrderItem))
+	mux.HandleFunc("/api/v1/connectors", s.withUser(s.connectors))
+	mux.HandleFunc("/api/v1/connectors/catalog", s.withUser(s.connectorCatalog))
+	mux.HandleFunc("/api/v1/connectors/marketplace", s.withUser(s.marketplace))
+	mux.HandleFunc("/api/v1/connectors/marketplace/", s.withUser(s.marketplace))
+	mux.HandleFunc("/api/v1/connectors/", s.withUser(s.putConnectorSecret))
+	mux.HandleFunc("/api/v1/actions", s.withUser(s.actions))
+	mux.HandleFunc("/api/v1/jobs", s.withUser(s.jobs))
+	mux.HandleFunc("/api/v1/jobs/", s.withUser(s.jobItem))
+	mux.HandleFunc("/api/v1/automations", s.withUser(s.automations))
+	mux.HandleFunc("/api/v1/playbooks", s.withUser(s.playbooks))
+	mux.HandleFunc("/api/v1/playbooks/", s.withUser(s.playbookItem))
+	mux.HandleFunc("/api/v1/playbook-runs/", s.withUser(s.playbookRunItem))
+	mux.HandleFunc("/api/v1/search/answer", s.withUser(s.searchAnswer))
+	mux.HandleFunc("/api/v1/search", s.withUser(s.search))
+	mux.HandleFunc("/api/v1/severity-policies", s.withUser(s.severityPolicies))
+	mux.HandleFunc("/api/v1/severity-policies/", s.withUser(s.severityPolicyItem))
+	mux.HandleFunc("/api/v1/audit/export", s.withUser(s.auditExport))
+	mux.HandleFunc("/api/v1/audit", s.withUser(s.audit))
+	mux.HandleFunc("/api/v1/stream/ticket", s.withUser(s.streamTicket))
+	mux.HandleFunc("/api/v1/stream", s.stream)
+	mux.HandleFunc("/api/v1/locations", s.withUser(s.locations))
+	mux.HandleFunc("/api/v1/locations/", s.withUser(s.locationItem))
+	mux.HandleFunc("/api/v1/asset-templates", s.withUser(s.assetTemplates))
+	mux.HandleFunc("/api/v1/asset-links", s.withUser(s.assetLinks))
+	mux.HandleFunc("/api/v1/onboarding", s.withUser(s.onboarding))
+	mux.HandleFunc("/api/v1/geocode", s.withUser(s.geocode))
+	mux.HandleFunc("/api/v1/dashboards", s.withUser(s.dashboards))
+	mux.HandleFunc("/api/v1/dashboards/", s.withUser(s.dashboardItem))
+	mux.HandleFunc("/api/v1/ingest/observations", s.rateIngest(s.withConnector(s.ingestObs)))
+	mux.HandleFunc("/api/v1/ingest/inventory", s.rateIngest(s.withConnector(s.ingestInv)))
+	mux.HandleFunc("/api/v1/ingest/events", s.rateIngest(s.withConnector(s.ingestEvt)))
+	mux.HandleFunc("/api/v1/ingest/remote-write", s.rateIngest(s.withConnector(s.ingestRemoteWrite)))
+	mux.HandleFunc("/api/v1/ingest/otlp/v1/metrics", s.rateIngest(s.withConnector(s.ingestOTLP)))
+	if s.Static != nil {
+		mux.Handle("/", s.spa())
+	}
+	return s.requestLog(s.secure(mux))
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// Flush forwards to the underlying ResponseWriter's Flusher so wrapping it
+// for request logging doesn't break SSE (internal/api's stream handler
+// type-asserts http.Flusher and 500s if it's missing).
+func (r *statusRecorder) Flush() {
+	if fl, ok := r.ResponseWriter.(http.Flusher); ok {
+		fl.Flush()
+	}
+}
+
+// requestLog logs one structured line per request (method, path, status,
+// duration) via the server's slog.Logger.
+func (s *Server) requestLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		s.Log.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+	})
+}
+
+func (s *Server) rateIngest(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := bearer(r)
+		if key == "" {
+			key = r.RemoteAddr
+		}
+		if !s.limiter.allow(key) {
+			s.metrics.inc(&s.metrics.ingestReject)
+			writeJSON(w, 429, map[string]string{"error": "ingest rate limit"})
+			return
+		}
+		next(w, r)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func readJSON(r *http.Request, v any) error {
+	return readJSONLimit(r, v, 1<<20)
+}
+
+func readJSONLimit(r *http.Request, v any, n int64) error {
+	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(nil, r.Body, n)
+	return json.NewDecoder(r.Body).Decode(v)
+}
+
+// parseRangeParam parses an RFC3339 timestamp query param, returning the
+// zero time.Time (an unbounded edge) for an empty string.
+func parseRangeParam(v string) (time.Time, error) {
+	if v == "" {
+		return time.Time{}, nil
+	}
+	return time.Parse(time.RFC3339, v)
+}
+
+func bearer(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if strings.HasPrefix(strings.ToLower(h), "bearer ") {
+		return strings.TrimSpace(h[7:])
+	}
+	if t := r.URL.Query().Get("token"); t != "" {
+		return t
+	}
+	return r.Header.Get("X-Yard-Token")
+}
+
+type ctxKey int
+
+const userKey ctxKey = 1
+const connKey ctxKey = 2
+
+// withUser accepts either a session token (from login) or a long-lived
+// human API key (from POST /api/v1/api-keys) — both resolve to a
+// model.User and share the same downstream authorization checks.
+func (s *Server) withUser(fn func(http.ResponseWriter, *http.Request, *model.User)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tok := bearer(r)
+		if tok == "" {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		if u, err := s.Store.SessionUser(r.Context(), tok); err == nil {
+			fn(w, r.WithContext(context.WithValue(r.Context(), userKey, u)), u)
+			return
+		}
+		sum := sha256.Sum256([]byte(tok))
+		hash := hex.EncodeToString(sum[:])
+		u, err := s.Store.UserByAPIKeyHash(r.Context(), hash)
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+			return
+		}
+		_ = s.Store.TouchAPIKeyHash(r.Context(), hash)
+		fn(w, r.WithContext(context.WithValue(r.Context(), userKey, u)), u)
+	}
+}
+
+func (s *Server) withConnector(fn func(http.ResponseWriter, *http.Request, *model.Connector)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tok := bearer(r)
+		if tok == "" {
+			writeJSON(w, 401, map[string]string{"error": "connector token required"})
+			return
+		}
+		sum := sha256.Sum256([]byte(tok))
+		c, err := s.Store.ConnectorByTokenHash(r.Context(), hex.EncodeToString(sum[:]))
+		if err != nil {
+			writeJSON(w, 401, map[string]string{"error": "invalid connector token"})
+			return
+		}
+		_ = s.Store.TouchConnector(r.Context(), c.ID)
+		if strings.Contains(r.URL.Path, "/api/v1/ingest/") {
+			ok, err := s.Store.TakeIngestBudget(r.Context(), c.OrganizationID, 120, time.Now())
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if !ok {
+				s.metrics.inc(&s.metrics.ingestReject)
+				writeJSON(w, 429, map[string]string{"error": "ingest rate limit"})
+				return
+			}
+		}
+		fn(w, r, c)
+	}
+}
+
+func (s *Server) oidcConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	issuer := strings.TrimSpace(os.Getenv("YARD_OIDC_ISSUER"))
+	clientID := strings.TrimSpace(os.Getenv("YARD_OIDC_CLIENT_ID"))
+	enabled := issuer != "" && clientID != ""
+	out := map[string]any{
+		"enabled":   enabled,
+		"issuer":    issuer,
+		"client_id": clientID,
+	}
+	if enabled {
+		out["authorize_url"] = strings.TrimRight(issuer, "/") + "/authorize"
+		out["token_url"] = strings.TrimRight(issuer, "/") + "/token"
+		out["note"] = "Start login at GET /api/v1/auth/oidc/start. The callback exchanges the code and issues a session."
+	}
+	writeJSON(w, 200, out)
+}
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var in struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		OTP      string `json:"otp"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	key := clientIP(r) + "|" + strings.ToLower(strings.TrimSpace(in.Email))
+	limited, err := s.Store.TooManyLogins(r.Context(), key, 10, time.Now().Add(-15*time.Minute))
+	if err != nil {
+		writeJSON(w, 503, map[string]string{"error": "login limiter unavailable"})
+		return
+	}
+	if limited {
+		s.metrics.inc(&s.metrics.loginLockout)
+		w.Header().Set("Retry-After", "900")
+		writeJSON(w, 429, map[string]string{"error": "too many login attempts"})
+		return
+	}
+	u, err := s.Store.UserByEmail(r.Context(), in.Email)
+	if err != nil || !u.Active || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(in.Password)) != nil {
+		s.metrics.inc(&s.metrics.loginFail)
+		_ = s.Store.RecordLoginFailure(r.Context(), key, time.Now().Add(-15*time.Minute))
+		writeJSON(w, 401, map[string]string{"error": "invalid credentials"})
+		return
+	}
+	_ = s.Store.ClearLoginFailures(r.Context(), key)
+	secret, err := s.Store.UserTOTP(r.Context(), u.ID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "otp"})
+		return
+	}
+	if secret != "" && !strings.HasPrefix(secret, "pending:") && !totp.Verify(secret, in.OTP, time.Now()) {
+		s.metrics.inc(&s.metrics.loginFail)
+		_ = s.Store.RecordLoginFailure(r.Context(), key, time.Now().Add(-15*time.Minute))
+		writeJSON(w, 401, map[string]string{"error": "otp required"})
+		return
+	}
+	sess, err := s.Store.CreateSession(r.Context(), u.ID, 12*time.Hour)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "session"})
+		return
+	}
+	s.metrics.inc(&s.metrics.loginOK)
+	writeJSON(w, 200, map[string]any{"token": sess.Token, "user": u, "expires_at": sess.ExpiresAt})
+}
+
+func (s *Server) me(w http.ResponseWriter, r *http.Request, u *model.User) {
+	writeJSON(w, 200, u)
+}
+
+// adminUsers lists, invites, and edits the roles/active state of an
+// organization's users. Admin-only: only admins may manage other accounts.
+func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request, u *model.User) {
+	if !s.requireAdmin(w, u) {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListUsers(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		var in struct {
+			Email       string `json:"email"`
+			DisplayName string `json:"display_name"`
+			Role        string `json:"role"`
+		}
+		if err := readJSON(r, &in); err != nil || in.Email == "" {
+			writeJSON(w, 400, map[string]string{"error": "email required"})
+			return
+		}
+		if s.Runtime.Mode == "production" && !mail.Configured() {
+			writeJSON(w, 503, map[string]string{"error": "email delivery is not configured"})
+			return
+		}
+		if in.Role == "" {
+			in.Role = "viewer"
+		}
+		// An invited user can't log in with this hash — accept-invite
+		// overwrites it with a real bcrypt hash of their own password.
+		unusable, _ := bcrypt.GenerateFromPassword([]byte(idgen.Secret(24)), 10)
+		nu := &model.User{
+			OrganizationID: u.OrganizationID,
+			Email:          in.Email,
+			DisplayName:    in.DisplayName,
+			Role:           in.Role,
+			Active:         true,
+			PasswordHash:   string(unusable),
+		}
+		if err := s.Store.CreateUser(r.Context(), nu); err != nil {
+			writeJSON(w, 409, map[string]string{"error": "email already exists"})
+			return
+		}
+		token, err := s.Store.CreateInviteToken(r.Context(), nu.ID, 72*time.Hour)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if s.Log != nil && !mail.Configured() && s.Runtime.Mode != "production" {
+			s.Log.Info("user invited", "email", nu.Email, "invite_token", token)
+		}
+		if mail.Configured() {
+			link := strings.TrimRight(s.Runtime.PublicURL, "/") + "/accept-invite?token=" + token
+			if err := mail.Send(nu.Email, "Yard invitation", "Accept your Yard invitation:\n\n"+link+"\n"); err != nil {
+				writeJSON(w, 502, map[string]string{"error": "email delivery failed"})
+				return
+			}
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "user.invite", nu.ID, nu.Email)
+		writeJSON(w, 201, map[string]any{"user": nu, "invite_token": token})
+	case http.MethodPatch:
+		var in struct {
+			ID     string  `json:"id"`
+			Role   *string `json:"role"`
+			Active *bool   `json:"active"`
+		}
+		if err := readJSON(r, &in); err != nil || in.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id required"})
+			return
+		}
+		if in.Role != nil {
+			if err := s.Store.UpdateUserRole(r.Context(), u.OrganizationID, in.ID, *in.Role); err != nil {
+				writeJSON(w, 404, map[string]string{"error": "not found"})
+				return
+			}
+		}
+		if in.Active != nil {
+			if err := s.Store.SetUserActive(r.Context(), u.OrganizationID, in.ID, *in.Active); err != nil {
+				writeJSON(w, 404, map[string]string{"error": "not found"})
+				return
+			}
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "user.update", in.ID, "")
+		writeJSON(w, 200, map[string]string{"status": "ok"})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+// acceptInvite lets a newly admin-invited user set their own password and
+// signs them in immediately, same response shape as login.
+func (s *Server) acceptInvite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var in struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := readJSON(r, &in); err != nil || in.Token == "" || len(in.Password) < 8 {
+		writeJSON(w, 400, map[string]string{"error": "token and a password of at least 8 characters are required"})
+		return
+	}
+	userID, err := s.Store.ConsumeInviteToken(r.Context(), in.Token)
+	if err != nil {
+		writeJSON(w, 401, map[string]string{"error": "invalid or expired invite"})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), 10)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "hash"})
+		return
+	}
+	if err := s.Store.SetUserPassword(r.Context(), userID, string(hash)); err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	u, err := s.Store.UserByID(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	sess, err := s.Store.CreateSession(r.Context(), u.ID, 12*time.Hour)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "session"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"token": sess.Token, "user": u, "expires_at": sess.ExpiresAt})
+}
+
+// requestReset issues a password-reset token for the given email if an
+// account exists, always responding 200 either way so the endpoint can't be
+// used to enumerate registered emails. The token itself is deliberately
+// NOT returned in this response (unlike acceptInvite's admin-issued invite
+// token) since this endpoint is reachable by anyone who knows an email
+// address; it's only surfaced server-side (log line) until real email
+// delivery is wired up with the same YARD_SMTP_* config as the automation
+// email action.
+func (s *Server) requestReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var in struct {
+		Email string `json:"email"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	if s.Runtime.Mode == "production" && !mail.Configured() {
+		writeJSON(w, 503, map[string]string{"error": "email delivery is not configured"})
+		return
+	}
+	if u, err := s.Store.UserByEmail(r.Context(), in.Email); err == nil && u.Active {
+		if token, err := s.Store.CreatePasswordResetToken(r.Context(), u.ID, time.Hour); err == nil {
+			link := strings.TrimRight(s.Runtime.PublicURL, "/") + "/reset-password?token=" + token
+			if s.Runtime.PublicURL == "" {
+				scheme := "http"
+				if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+					scheme = "https"
+				}
+				link = fmt.Sprintf("%s://%s/reset-password?token=%s", scheme, r.Host, token)
+			}
+			if mail.Configured() {
+				_ = mail.Send(u.Email, "Yard password reset", "Reset your Yard password:\n\n"+link+"\n")
+			} else if s.Log != nil && s.Runtime.Mode != "production" {
+				s.Log.Info("password reset requested", "email", u.Email, "reset_link", link)
+			}
+		}
+	}
+	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var in struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := readJSON(r, &in); err != nil || in.Token == "" || len(in.Password) < 8 {
+		writeJSON(w, 400, map[string]string{"error": "token and a password of at least 8 characters are required"})
+		return
+	}
+	userID, err := s.Store.ConsumePasswordResetToken(r.Context(), in.Token)
+	if err != nil {
+		writeJSON(w, 401, map[string]string{"error": "invalid or expired reset token"})
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), 10)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": "hash"})
+		return
+	}
+	if err := s.Store.SetUserPassword(r.Context(), userID, string(hash)); err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	_ = s.Store.DeleteUserSessions(r.Context(), userID)
+	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+// apiKeys is self-service: any authenticated user manages their own keys
+// (not admin-gated — a human API key stands in for that person's own
+// session, same trust level as their password).
+func (s *Server) apiKeys(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListAPIKeysForUser(r.Context(), u.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		var in struct {
+			Name string `json:"name"`
+		}
+		if err := readJSON(r, &in); err != nil || in.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "name required"})
+			return
+		}
+		raw := "yard_key_" + idgen.Secret(20)
+		sum := sha256.Sum256([]byte(raw))
+		hint := raw
+		if len(hint) > 12 {
+			hint = hint[:12] + "…"
+		}
+		key := &model.APIKey{
+			OrganizationID: u.OrganizationID,
+			UserID:         u.ID,
+			Name:           in.Name,
+			TokenHash:      hex.EncodeToString(sum[:]),
+			TokenHint:      hint,
+		}
+		if err := s.Store.CreateAPIKey(r.Context(), key); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "apikey.create", key.ID, key.Name)
+		writeJSON(w, 201, map[string]any{"api_key": key, "token": raw})
+	case http.MethodPatch:
+		var in struct {
+			ID     string `json:"id"`
+			Delete bool   `json:"delete"`
+		}
+		if err := readJSON(r, &in); err != nil || in.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id required"})
+			return
+		}
+		if in.Delete {
+			if err := s.Store.DeleteAPIKey(r.Context(), u.ID, in.ID); err != nil {
+				writeJSON(w, 404, map[string]string{"error": "not found"})
+				return
+			}
+			_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "apikey.delete", in.ID, "")
+		}
+		writeJSON(w, 200, map[string]string{"status": "ok"})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) overview(w http.ResponseWriter, r *http.Request, u *model.User) {
+	ov, err := s.Store.Overview(r.Context(), u.OrganizationID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	if !roleOK(u, true) {
+		ov.RecentActivity = []model.AuditEntry{}
+	}
+	writeJSON(w, 200, ov)
+}
+
+func (s *Server) sites(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListSites(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var site model.Site
+		if err := readJSON(r, &site); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		site.OrganizationID = u.OrganizationID
+		if site.Kind == "" {
+			site.Kind = "site"
+		}
+		if site.Timezone == "" {
+			site.Timezone = "UTC"
+		}
+		if site.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "name required"})
+			return
+		}
+		if !validLatLng(site.Latitude, site.Longitude) {
+			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+			return
+		}
+		if err := s.Store.UpsertSite(r.Context(), &site); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "site.create", site.ID, site.Name)
+		s.Hub.Publish(u.OrganizationID, "site.created", site)
+		writeJSON(w, 201, site)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) siteItem(w http.ResponseWriter, r *http.Request, u *model.User) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/sites/")
+	id = strings.Trim(id, "/")
+	if id == "" {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	site, err := s.Store.SiteByID(r.Context(), u.OrganizationID, id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, 200, site)
+	case http.MethodPatch:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in model.Site
+		if err := readJSON(r, &in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		if in.Name != "" {
+			site.Name = in.Name
+		}
+		if in.Kind != "" {
+			site.Kind = in.Kind
+		}
+		if in.Address != "" || in.Name != "" {
+			site.Address = in.Address
+		}
+		if in.Timezone != "" {
+			site.Timezone = in.Timezone
+		}
+		if in.Latitude != nil {
+			site.Latitude = in.Latitude
+		}
+		if in.Longitude != nil {
+			site.Longitude = in.Longitude
+		}
+		if !validLatLng(site.Latitude, site.Longitude) {
+			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+			return
+		}
+		if err := s.Store.UpdateSite(r.Context(), site); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "site.update", site.ID, site.Name)
+		s.Hub.Publish(u.OrganizationID, "site.updated", site)
+		writeJSON(w, 200, site)
+	case http.MethodDelete:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		if err := s.Store.DeleteSite(r.Context(), u.OrganizationID, id); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "site.delete", id, site.Name)
+		writeJSON(w, 200, map[string]string{"deleted": id})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) assets(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		if bbox := r.URL.Query().Get("bbox"); bbox != "" {
+			minLng, minLat, maxLng, maxLat, ok := store.ParseBBox(bbox)
+			if !ok {
+				writeJSON(w, 400, map[string]string{"error": "bbox must be minLng,minLat,maxLng,maxLat"})
+				return
+			}
+			list, err := s.Store.ListAssetsInBBox(r.Context(), u.OrganizationID, minLng, minLat, maxLng, maxLat)
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, list)
+			return
+		}
+		list, err := s.Store.ListAssets(r.Context(), u.OrganizationID, r.URL.Query().Get("q"), r.URL.Query().Get("kind"), r.URL.Query().Get("health"))
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var a model.Asset
+		if err := readJSON(r, &a); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		a.OrganizationID = u.OrganizationID
+		if a.Kind == "" {
+			a.Kind = "equipment"
+		}
+		if !validLatLng(a.Latitude, a.Longitude) {
+			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+			return
+		}
+		if err := s.Store.UpsertAsset(r.Context(), &a); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.create", a.ID, a.Name)
+		s.Hub.Publish(u.OrganizationID, "asset.created", a)
+		writeJSON(w, 201, a)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) assetItem(w http.ResponseWriter, r *http.Request, u *model.User) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/v1/assets/")
+	parts := strings.Split(rest, "/")
+	id := parts[0]
+	if id == "" {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	if id == "export" {
+		s.assetsExport(w, r, u)
+		return
+	}
+	if id == "import" {
+		s.assetsImport(w, r, u)
+		return
+	}
+	a, err := s.Store.AssetByID(r.Context(), u.OrganizationID, id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	if len(parts) == 2 && parts[1] == "label" && r.Method == http.MethodGet {
+		s.assetLabel(w, a)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "twin" && r.Method == http.MethodGet {
+		s.assetTwin(w, r, u, a)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "blast-radius" && r.Method == http.MethodGet {
+		s.assetBlast(w, r, u, a)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "score" && r.Method == http.MethodGet {
+		s.assetScore(w, r, u, a)
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "attachments" {
+		s.assetAttachments(w, r, u, a, parts)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "bom" {
+		s.assetBOM(w, r, u, a)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "installs" && r.Method == http.MethodGet {
+		s.assetInstalls(w, r, u, a)
+		return
+	}
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		caps, _ := s.Store.ListCapabilities(r.Context(), a.ID)
+		obs, _ := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, "", time.Time{}, time.Time{}, 80)
+		ev, _ := s.Store.ListEventsForAsset(r.Context(), u.OrganizationID, a.ID, 40)
+		wos, _ := s.Store.ListWorkOrdersForAsset(r.Context(), u.OrganizationID, a.ID)
+		writeJSON(w, 200, map[string]any{"asset": a, "capabilities": caps, "observations": obs, "events": ev, "work_orders": wos})
+		return
+	}
+	if len(parts) == 1 && r.Method == http.MethodPatch {
+		if !s.requireWrite(w, u) {
+			return
+		}
+		rawIn, desired, downtime, replacement, floorX, floorY, err := readAssetPatch(r)
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		in := rawIn
+		if in.Name != "" {
+			a.Name = in.Name
+		}
+		if in.Kind != "" {
+			a.Kind = in.Kind
+		}
+		if in.Status != "" {
+			a.Status = in.Status
+		}
+		if in.Manufacturer != "" {
+			a.Manufacturer = in.Manufacturer
+		}
+		if in.Model != "" {
+			a.Model = in.Model
+		}
+		if in.Serial != "" {
+			a.Serial = in.Serial
+		}
+		if in.ExternalRef != "" {
+			a.ExternalRef = in.ExternalRef
+		}
+		if in.SiteID != nil {
+			a.SiteID = in.SiteID
+		}
+		if in.Latitude != nil {
+			a.Latitude = in.Latitude
+		}
+		if in.Longitude != nil {
+			a.Longitude = in.Longitude
+		}
+		if in.StaleAfterSec > 0 {
+			a.StaleAfterSec = in.StaleAfterSec
+		}
+		if in.Metadata != "" {
+			a.Metadata = in.Metadata
+		}
+		if in.ParentAssetID != nil || in.LocationID != nil || in.TemplateID != nil {
+			parent, location, template := a.ParentAssetID, a.LocationID, a.TemplateID
+			prevParent := ""
+			if a.ParentAssetID != nil {
+				prevParent = *a.ParentAssetID
+			}
+			if in.ParentAssetID != nil {
+				parent = in.ParentAssetID
+			}
+			if in.LocationID != nil {
+				location = in.LocationID
+			}
+			if in.TemplateID != nil {
+				template = in.TemplateID
+			}
+			if location != nil && *location != "" {
+				if err := s.Store.LocationInOrg(r.Context(), u.OrganizationID, *location); err != nil {
+					writeJSON(w, 400, map[string]string{"error": "location not found"})
+					return
+				}
+			}
+			if err := s.Store.SetAssetPlacement(r.Context(), u.OrganizationID, a.ID, parent, location, template); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			nextParent := ""
+			if parent != nil {
+				nextParent = *parent
+			}
+			if in.ParentAssetID != nil && nextParent != prevParent {
+				_ = s.Store.RecordInstall(r.Context(), u.OrganizationID, a.ID, parent, "parent changed")
+			}
+			a.ParentAssetID, a.LocationID, a.TemplateID = parent, location, template
+		}
+		if !validLatLng(a.Latitude, a.Longitude) {
+			writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+			return
+		}
+		if err := s.Store.UpsertAsset(r.Context(), a); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if desired != nil || downtime != nil || replacement != nil {
+			state := a.DesiredState
+			if desired != nil {
+				state = *desired
+			}
+			if err := s.Store.SetAssetDesired(r.Context(), u.OrganizationID, a.ID, state, downtime, replacement); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			a.DesiredState = state
+			if downtime != nil {
+				a.DowntimeCentsPerHour = *downtime
+			}
+			if replacement != nil {
+				a.ReplacementCostCents = *replacement
+			}
+		}
+		if floorX != nil || floorY != nil {
+			if err := s.Store.SetAssetFloor(r.Context(), u.OrganizationID, a.ID, floorX, floorY); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if in.NFCID != "" {
+			if err := s.Store.SetAssetNFC(r.Context(), u.OrganizationID, a.ID, in.NFCID); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			a.NFCID = in.NFCID
+		}
+		if in.PurchasedAt != nil || in.WarrantyExpiresAt != nil || in.PurchaseCents > 0 || in.UsefulLifeMonths > 0 {
+			purchased, warranty := a.PurchasedAt, a.WarrantyExpiresAt
+			cents, months := a.PurchaseCents, a.UsefulLifeMonths
+			if in.PurchasedAt != nil {
+				purchased = in.PurchasedAt
+			}
+			if in.WarrantyExpiresAt != nil {
+				warranty = in.WarrantyExpiresAt
+			}
+			if in.PurchaseCents > 0 {
+				cents = in.PurchaseCents
+			}
+			if in.UsefulLifeMonths > 0 {
+				months = in.UsefulLifeMonths
+			}
+			if err := s.Store.SetAssetWarranty(r.Context(), u.OrganizationID, a.ID, purchased, warranty, cents, months); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			a.PurchasedAt, a.WarrantyExpiresAt, a.PurchaseCents, a.UsefulLifeMonths = purchased, warranty, cents, months
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.update", a.ID, a.Name)
+		s.Hub.Publish(u.OrganizationID, "asset.updated", a)
+		writeJSON(w, 200, a)
+		return
+	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		if !s.requireWrite(w, u) {
+			return
+		}
+		if err := s.Store.DeleteAsset(r.Context(), u.OrganizationID, id); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.delete", id, a.Name)
+		writeJSON(w, 200, map[string]string{"deleted": id})
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "capabilities" {
+		if r.Method == http.MethodGet {
+			caps, err := s.Store.ListCapabilities(r.Context(), a.ID)
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, caps)
+			return
+		}
+		if r.Method == http.MethodPut {
+			if !s.requireWrite(w, u) {
+				return
+			}
+			var caps []model.Capability
+			if err := readJSON(r, &caps); err != nil {
+				writeJSON(w, 400, map[string]string{"error": "invalid json"})
+				return
+			}
+			for i := range caps {
+				caps[i].AssetID = a.ID
+				if caps[i].Kind == "" {
+					caps[i].Kind = "measurement"
+				}
+			}
+			if err := s.Store.ReplaceCapabilities(r.Context(), a.ID, caps); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.capabilities", a.ID, a.Name)
+			out, _ := s.Store.ListCapabilities(r.Context(), a.ID)
+			writeJSON(w, 200, out)
+			return
+		}
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "integrations" && r.Method == http.MethodGet {
+		meta := map[string]any{}
+		_ = json.Unmarshal([]byte(a.Metadata), &meta)
+		out := map[string]any{
+			"asset_id":     a.ID,
+			"external_ref": a.ExternalRef,
+			"nodra":        meta["nodra"],
+			"fleet":        meta["fleet"],
+			"ota":          meta["ota"],
+			"raw_metadata": meta,
+		}
+		if acts, err := s.Store.ListActions(r.Context(), u.OrganizationID); err == nil {
+			for _, act := range acts {
+				if act.Result == "" {
+					continue
+				}
+				var parsed any
+				if json.Unmarshal([]byte(act.Result), &parsed) != nil {
+					continue
+				}
+				switch act.Action {
+				case "campaign.list":
+					if out["ota"] == nil {
+						out["ota"] = parsed
+					}
+				case "desired.progress", "lifecycle.request":
+					if out["fleet"] == nil {
+						out["fleet"] = parsed
+					}
+				case "telemetry.receive":
+					if out["nodra"] == nil {
+						out["nodra"] = parsed
+					}
+				}
+			}
+		}
+		writeJSON(w, 200, out)
+		return
+	}
+	if len(parts) >= 2 && parts[1] == "observations" {
+		cap := r.URL.Query().Get("capability")
+		limit := 400
+		from, err := parseRangeParam(r.URL.Query().Get("from"))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid from: " + err.Error()})
+			return
+		}
+		to, err := parseRangeParam(r.URL.Query().Get("to"))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid to: " + err.Error()})
+			return
+		}
+		obs, err := s.Store.ListObservations(r.Context(), u.OrganizationID, a.ID, cap, from, to, limit)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, obs)
+		return
+	}
+	writeJSON(w, 404, map[string]string{"error": "not found"})
+}
+
+func (s *Server) assetsExport(w http.ResponseWriter, r *http.Request, u *model.User) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	list, err := s.Store.ListAssets(r.Context(), u.OrganizationID, r.URL.Query().Get("q"), r.URL.Query().Get("kind"), r.URL.Query().Get("health"))
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	format := strings.ToLower(r.URL.Query().Get("format"))
+	if format == "" {
+		format = "json"
+	}
+	switch format {
+	case "json":
+		w.Header().Set("Content-Disposition", `attachment; filename="assets.json"`)
+		writeJSON(w, 200, list)
+	case "csv":
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="assets.csv"`)
+		cw := csv.NewWriter(w)
+		_ = cw.Write([]string{"name", "external_ref", "kind", "status", "health", "manufacturer", "model", "serial", "site_id", "latitude", "longitude", "stale_after_sec", "metadata"})
+		for _, a := range list {
+			_ = cw.Write([]string{
+				a.Name, a.ExternalRef, a.Kind, a.Status, a.Health, a.Manufacturer, a.Model, a.Serial,
+				derefS(a.SiteID), fmtFloat(a.Latitude), fmtFloat(a.Longitude), strconv.Itoa(a.StaleAfterSec), a.Metadata,
+			})
+		}
+		cw.Flush()
+	default:
+		writeJSON(w, 400, map[string]string{"error": "format must be json or csv"})
+	}
+}
+
+func (s *Server) assetsImport(w http.ResponseWriter, r *http.Request, u *model.User) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	if !s.requireWrite(w, u) {
+		return
+	}
+	ct := r.Header.Get("Content-Type")
+	format := strings.ToLower(r.URL.Query().Get("format"))
+	if format == "" {
+		if strings.Contains(ct, "text/csv") || strings.Contains(ct, "application/csv") {
+			format = "csv"
+		} else {
+			format = "json"
+		}
+	}
+	var rows []model.Asset
+	switch format {
+	case "json":
+		body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "read body"})
+			return
+		}
+		if err := json.Unmarshal(body, &rows); err != nil {
+			var one model.Asset
+			if err2 := json.Unmarshal(body, &one); err2 != nil {
+				writeJSON(w, 400, map[string]string{"error": "invalid json array or object"})
+				return
+			}
+			rows = []model.Asset{one}
+		}
+	case "csv":
+		body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": "read body"})
+			return
+		}
+		cr := csv.NewReader(strings.NewReader(string(body)))
+		records, err := cr.ReadAll()
+		if err != nil || len(records) < 2 {
+			writeJSON(w, 400, map[string]string{"error": "invalid csv"})
+			return
+		}
+		header := map[string]int{}
+		for i, h := range records[0] {
+			header[strings.ToLower(strings.TrimSpace(h))] = i
+		}
+		col := func(row []string, name string) string {
+			i, ok := header[name]
+			if !ok || i >= len(row) {
+				return ""
+			}
+			return strings.TrimSpace(row[i])
+		}
+		for _, row := range records[1:] {
+			a := model.Asset{
+				Name:          col(row, "name"),
+				ExternalRef:   col(row, "external_ref"),
+				Kind:          col(row, "kind"),
+				Status:        col(row, "status"),
+				Manufacturer:  col(row, "manufacturer"),
+				Model:         col(row, "model"),
+				Serial:        col(row, "serial"),
+				Metadata:      col(row, "metadata"),
+				StaleAfterSec: atoiDefault(col(row, "stale_after_sec"), 90),
+			}
+			if site := col(row, "site_id"); site != "" {
+				a.SiteID = &site
+			}
+			if lat := parseFloatPtr(col(row, "latitude")); lat != nil && validLatLng(lat, nil) {
+				a.Latitude = lat
+			}
+			if lng := parseFloatPtr(col(row, "longitude")); lng != nil && validLatLng(nil, lng) {
+				a.Longitude = lng
+			}
+			if a.Name == "" && a.ExternalRef == "" {
+				continue
+			}
+			if a.Name == "" {
+				a.Name = a.ExternalRef
+			}
+			rows = append(rows, a)
+		}
+	default:
+		writeJSON(w, 400, map[string]string{"error": "format must be json or csv"})
+		return
+	}
+	created, updated := 0, 0
+	var out []model.Asset
+	for i := range rows {
+		a, action, err := s.Store.ImportAssetRow(r.Context(), u.OrganizationID, &rows[i])
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		if action == "created" {
+			created++
+		} else {
+			updated++
+		}
+		out = append(out, *a)
+	}
+	_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "asset.import", fmt.Sprintf("%d", len(out)), fmt.Sprintf("created=%d updated=%d format=%s", created, updated, format))
+	writeJSON(w, 200, map[string]any{"created": created, "updated": updated, "assets": out})
+}
+
+func derefS(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func fmtFloat(p *float64) string {
+	if p == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*p, 'f', -1, 64)
+}
+
+func parseFloatPtr(s string) *float64 {
+	if s == "" {
+		return nil
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil
+	}
+	return &v
+}
+
+func validLatLng(lat, lng *float64) bool {
+	if lat != nil && (*lat < -90 || *lat > 90) {
+		return false
+	}
+	if lng != nil && (*lng < -180 || *lng > 180) {
+		return false
+	}
+	return true
+}
+
+func atoiDefault(s string, d int) int {
+	if s == "" {
+		return d
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return d
+	}
+	return n
+}
+
+func (s *Server) severityPolicies(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListSeverityPolicies(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var p model.SeverityPolicy
+		if err := readJSON(r, &p); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		p.OrganizationID = u.OrganizationID
+		if p.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "name required"})
+			return
+		}
+		if err := s.Store.CreateSeverityPolicy(r.Context(), &p); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "severity_policy.create", p.ID, p.Name)
+		writeJSON(w, 201, p)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) severityPolicyItem(w http.ResponseWriter, r *http.Request, u *model.User) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/severity-policies/")
+	if id == "" {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	p, err := s.Store.GetSeverityPolicy(r.Context(), u.OrganizationID, id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, 200, p)
+	case http.MethodPatch:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in model.SeverityPolicy
+		if err := readJSON(r, &in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		if in.Name != "" {
+			p.Name = in.Name
+		}
+		if in.MatchKind != "" {
+			p.MatchKind = in.MatchKind
+		}
+		p.MatchValue = in.MatchValue
+		if in.Severity != "" {
+			p.Severity = in.Severity
+		}
+		p.Runbook = in.Runbook
+		p.Priority = in.Priority
+		if err := s.Store.UpdateSeverityPolicy(r.Context(), p); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "severity_policy.update", p.ID, p.Name)
+		writeJSON(w, 200, p)
+	case http.MethodDelete:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		if err := s.Store.DeleteSeverityPolicy(r.Context(), u.OrganizationID, id); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "severity_policy.delete", id, p.Name)
+		writeJSON(w, 200, map[string]string{"deleted": id})
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, u *model.User) {
+	pts, err := s.Store.LatestTelemetry(r.Context(), u.OrganizationID)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, pts)
+}
+
+func (s *Server) events(w http.ResponseWriter, r *http.Request, u *model.User) {
+	list, err := s.Store.ListEvents(r.Context(), u.OrganizationID, 120)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (s *Server) incidents(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListIncidents(r.Context(), u.OrganizationID, r.URL.Query().Get("status"))
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var inc model.Incident
+		if err := readJSON(r, &inc); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		inc.OrganizationID = u.OrganizationID
+		if inc.ParentID != "" {
+			if _, err := s.Store.GetIncident(r.Context(), u.OrganizationID, inc.ParentID); err != nil {
+				writeJSON(w, 400, map[string]string{"error": "parent not found"})
+				return
+			}
+		}
+		if inc.Severity == "" || inc.Runbook == "" {
+			sev, rb := s.Store.ResolveSeverity(r.Context(), u.OrganizationID, "", "")
+			if inc.Severity == "" {
+				inc.Severity = sev
+			}
+			if inc.Runbook == "" {
+				inc.Runbook = rb
+			}
+		}
+		if err := s.Store.CreateIncident(r.Context(), &inc); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_, _ = s.Store.InsertEvent(r.Context(), &model.Event{OrganizationID: u.OrganizationID, AssetID: inc.AssetID, Kind: "incident.opened", Severity: inc.Severity, Title: inc.Title, Body: inc.Summary})
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "incident.open", inc.ID, inc.Title)
+		s.Hub.Publish(u.OrganizationID, "incident.opened", inc)
+		writeJSON(w, 201, inc)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) incidentItem(w http.ResponseWriter, r *http.Request, u *model.User) {
+	id := strings.TrimPrefix(r.URL.Path, "/api/v1/incidents/")
+	id = strings.TrimSuffix(id, "/resolve")
+	inc, err := s.Store.GetIncident(r.Context(), u.OrganizationID, strings.Split(id, "/")[0])
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/timeline") {
+		notes, err := s.Store.IncidentTimeline(r.Context(), u.OrganizationID, inc.ID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, notes)
+		return
+	}
+	if r.Method == http.MethodGet && !strings.Contains(r.URL.Path, "/resolve") {
+		writeJSON(w, 200, inc)
+		return
+	}
+	if r.Method == http.MethodPatch {
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in map[string]string
+		_ = readJSON(r, &in)
+		if v := in["status"]; v != "" {
+			inc.Status = v
+		}
+		if inc.Status == "ack" && inc.AckedAt == nil {
+			now := time.Now().UTC()
+			inc.AckedAt = &now
+		}
+		if v := in["owner"]; v != "" {
+			inc.Owner = v
+		}
+		if v := in["resolution"]; v != "" {
+			inc.Resolution = v
+		}
+		if v := in["summary"]; v != "" {
+			inc.Summary = v
+		}
+		if inc.Status == "resolved" && inc.ResolvedAt == nil {
+			now := time.Now().UTC()
+			inc.ResolvedAt = &now
+		}
+		if err := s.Store.UpdateIncident(r.Context(), inc); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "incident.update", inc.ID, inc.Status+" "+inc.Resolution)
+		s.Hub.Publish(u.OrganizationID, "incident.updated", inc)
+		writeJSON(w, 200, inc)
+		return
+	}
+	writeJSON(w, 405, map[string]string{"error": "method"})
+}
+
+func (s *Server) workOrders(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListWorkOrders(r.Context(), u.OrganizationID, r.URL.Query().Get("status"))
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var wo model.WorkOrder
+		if err := readJSON(r, &wo); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		wo.OrganizationID = u.OrganizationID
+		if wo.Kind == "" {
+			wo.Kind = "maintenance"
+		}
+		if wo.Priority == "" {
+			wo.Priority = "normal"
+		}
+		if wo.ScheduleCron != "" {
+			if _, err := maintain.Due(wo.ScheduleCron, time.Now().UTC()); err != nil {
+				writeJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if wo.Title == "" {
+			writeJSON(w, 400, map[string]string{"error": "title required"})
+			return
+		}
+		if err := s.Store.CreateWorkOrder(r.Context(), &wo); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "workorder.create", wo.ID, wo.Title)
+		s.Hub.Publish(u.OrganizationID, "workorder.created", wo)
+		writeJSON(w, 201, wo)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) workOrderItem(w http.ResponseWriter, r *http.Request, u *model.User) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/v1/work-orders/")
+	id, extra, hasExtra := strings.Cut(rest, "/")
+	wo, err := s.Store.GetWorkOrder(r.Context(), u.OrganizationID, id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	if hasExtra {
+		if strings.HasPrefix(extra, "lines") {
+			s.workOrderLines(w, r, u, wo, extra)
+			return
+		}
+		if strings.HasPrefix(extra, "permits") {
+			s.workOrderPermits(w, r, u, wo, extra)
+			return
+		}
+		if s.workOrderExtras(w, r, u, wo, extra) {
+			return
+		}
+		writeJSON(w, 404, map[string]string{"error": "not found"})
+		return
+	}
+	if r.Method == http.MethodGet {
+		writeJSON(w, 200, wo)
+		return
+	}
+	if r.Method == http.MethodPatch {
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in map[string]string
+		_ = readJSON(r, &in)
+		if v := in["status"]; v != "" {
+			wo.Status = v
+		}
+		if v := in["assignee"]; v != "" {
+			wo.Assignee = v
+		}
+		if v := in["notes"]; v != "" {
+			wo.Notes = v
+		}
+		if v, ok := in["checklist"]; ok {
+			wo.Checklist = v
+		}
+		if v, ok := in["schedule_cron"]; ok {
+			wo.ScheduleCron = v
+		}
+		if v := in["priority"]; v != "" {
+			wo.Priority = v
+		}
+		if v, ok := in["due_at"]; ok {
+			if v == "" {
+				wo.DueAt = nil
+			} else if t, err := time.Parse(time.RFC3339, v); err == nil {
+				wo.DueAt = &t
+			} else if t, err := time.Parse("2006-01-02", v); err == nil {
+				wo.DueAt = &t
+			}
+		}
+		if v, ok := in["sla_due_at"]; ok {
+			if v == "" {
+				wo.SLADueAt = nil
+			} else if t, err := time.Parse(time.RFC3339, v); err == nil {
+				wo.SLADueAt = &t
+			} else if t, err := time.Parse("2006-01-02", v); err == nil {
+				wo.SLADueAt = &t
+			}
+		}
+		skill, _ := s.Store.WorkOrderSkill(r.Context(), u.OrganizationID, wo.ID)
+		if v, ok := in["required_skill"]; ok {
+			skill = v
+			if err := s.Store.SetWorkOrderSkill(r.Context(), u.OrganizationID, wo.ID, v); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if wo.Assignee != "" && skill != "" {
+			ok, err := s.Store.AssigneeHasSkill(r.Context(), u.OrganizationID, wo.Assignee, skill)
+			if err != nil || !ok {
+				writeJSON(w, 409, map[string]string{"error": "assignee lacks the required skill"})
+				return
+			}
+		}
+		if wo.Status == "done" && needsPermit(wo) {
+			ok, err := s.Store.HasApprovedPermit(r.Context(), u.OrganizationID, wo.ID)
+			if err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			if !ok {
+				writeJSON(w, 409, map[string]string{"error": "an approved permit is required"})
+				return
+			}
+		}
+		if err := s.Store.UpdateWorkOrder(r.Context(), wo); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "workorder.update", wo.ID, wo.Status)
+		s.Hub.Publish(u.OrganizationID, "workorder.updated", wo)
+		writeJSON(w, 200, wo)
+		return
+	}
+	writeJSON(w, 405, map[string]string{"error": "method"})
+}
+
+func (s *Server) connectors(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListConnectors(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		for i := range list {
+			s.presentConnector(r.Context(), &list[i])
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPatch:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in struct {
+			ID              string  `json:"id"`
+			Name            *string `json:"name"`
+			Endpoint        *string `json:"endpoint"`
+			Status          *string `json:"status"`
+			Config          *string `json:"config"`
+			RotateToken     bool    `json:"rotate_token"`
+			SyncIntervalSec *int    `json:"sync_interval_sec"`
+		}
+		if err := readJSON(r, &in); err != nil || in.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id required"})
+			return
+		}
+		c, err := s.Store.ConnectorByID(r.Context(), u.OrganizationID, in.ID)
+		if err != nil {
+			writeJSON(w, 404, map[string]string{"error": "not found"})
+			return
+		}
+		if in.Name != nil {
+			c.Name = *in.Name
+		}
+		if in.Endpoint != nil {
+			c.Endpoint = *in.Endpoint
+		}
+		if in.Status != nil {
+			c.Status = *in.Status
+		}
+		if in.Config != nil {
+			if configHasSecretField(*in.Config) {
+				writeJSON(w, 400, map[string]string{"error": "set connector secrets with PUT /api/v1/connectors/{id}/secret"})
+				return
+			}
+			if tlsInsecureRequested(*in.Config) && s.Runtime.Mode == "production" && !s.Runtime.AllowInsecureTLS {
+				writeJSON(w, 400, map[string]string{"error": "insecure TLS is not allowed in production"})
+				return
+			}
+			c.Config = *in.Config
+		}
+		if in.Endpoint != nil {
+			if err := s.Runtime.Egress.ValidateOptional(*in.Endpoint); err != nil {
+				writeJSON(w, 400, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if in.SyncIntervalSec != nil {
+			if *in.SyncIntervalSec < 0 {
+				writeJSON(w, 400, map[string]string{"error": "sync interval must be >= 0"})
+				return
+			}
+			if *in.SyncIntervalSec > 0 && *in.SyncIntervalSec < 30 {
+				writeJSON(w, 400, map[string]string{"error": "sync interval must be at least 30 seconds"})
+				return
+			}
+			c.SyncIntervalSec = *in.SyncIntervalSec
+		}
+		if err := s.Store.UpdateConnector(r.Context(), u.OrganizationID, c); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		out := map[string]any{"connector": c}
+		if in.RotateToken {
+			tok := "yard_" + c.Kind + "_" + idgen.Secret(16)
+			sum := sha256.Sum256([]byte(tok))
+			hint := tok
+			if len(hint) > 12 {
+				hint = hint[:12] + "…"
+			}
+			if err := s.Store.SetConnectorToken(r.Context(), u.OrganizationID, c.ID, hex.EncodeToString(sum[:]), hint); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			c.TokenHint = hint
+			c.Status = "connected"
+			out["connector"] = c
+			out["token"] = tok
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "connector.update", c.ID, c.Name)
+		s.presentConnector(r.Context(), c)
+		out["connector"] = c
+		writeJSON(w, 200, out)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) actions(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListActions(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in struct {
+			AssetID        string `json:"asset_id"`
+			ConnectorID    string `json:"connector_id"`
+			Action         string `json:"action"`
+			Payload        string `json:"payload"`
+			IdempotencyKey string `json:"idempotency_key"`
+		}
+		if err := readJSON(r, &in); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		if in.Action == "" {
+			writeJSON(w, 400, map[string]string{"error": "action required"})
+			return
+		}
+		if in.IdempotencyKey == "" {
+			in.IdempotencyKey = r.Header.Get("Idempotency-Key")
+		}
+		if in.IdempotencyKey == "" {
+			in.IdempotencyKey = idgen.New("idem")
+		}
+		if in.Payload == "" {
+			in.Payload = "{}"
+		}
+		in.Payload = stripActionSecrets(in.Payload)
+		var assetID *string
+		if in.AssetID != "" {
+			assetID = &in.AssetID
+		}
+		var connID *string
+		var conn *model.Connector
+		if in.ConnectorID != "" {
+			connID = &in.ConnectorID
+			var err error
+			conn, err = s.Store.ConnectorByID(r.Context(), u.OrganizationID, in.ConnectorID)
+			if err != nil {
+				writeJSON(w, 404, map[string]string{"error": "connector not found"})
+				return
+			}
+		}
+		act := &model.ActionRequest{
+			OrganizationID: u.OrganizationID,
+			AssetID:        assetID,
+			ConnectorID:    connID,
+			Action:         in.Action,
+			IdempotencyKey: in.IdempotencyKey,
+			Status:         "queued",
+			Payload:        in.Payload,
+			ExpiresAt:      time.Now().UTC().Add(15 * time.Minute),
+		}
+		if conn != nil && s.Queue != nil && queue.NeedsApproval(in.Action) {
+			act.Status = "pending_approval"
+		}
+		if err := s.Store.CreateAction(r.Context(), act); err != nil {
+			writeJSON(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		if conn == nil {
+			_ = s.Store.CompleteAction(r.Context(), act.ID, "recorded", "No connector selected; outcome recorded locally.")
+			act.Status = "recorded"
+			act.Result = "No connector selected; outcome recorded locally."
+		} else if s.Queue != nil {
+			status := act.Status
+			if _, err := queue.EnqueueRemoteAction(r.Context(), s.Store, u.OrganizationID, act.ID, conn.ID, in.Action, in.Payload, u.ID, status); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			act.Status = status
+			if status == "pending_approval" {
+				act.Result = "waiting for a second approver"
+			} else {
+				act.Result = "queued for worker"
+			}
+		} else if s.Dispatch != nil {
+			st, res, err := s.Dispatch.Execute(r.Context(), u.OrganizationID, conn, in.Action, in.Payload)
+			if err != nil && res == "" {
+				res = err.Error()
+			}
+			_ = s.Store.CompleteAction(r.Context(), act.ID, st, res)
+			act.Status = st
+			act.Result = res
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "action.request", act.ID, act.Action)
+		writeJSON(w, 202, act)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) automations(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListAutomations(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var a model.Automation
+		if err := readJSON(r, &a); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid json"})
+			return
+		}
+		a.OrganizationID = u.OrganizationID
+		if a.Name == "" || a.Action == "" {
+			writeJSON(w, 400, map[string]string{"error": "name and action required"})
+			return
+		}
+		if a.TriggerKind == "" {
+			a.TriggerKind = "threshold"
+		}
+		if a.Config == "" {
+			a.Config = "{}"
+		}
+		a.Enabled = true
+		if err := s.Store.CreateAutomation(r.Context(), &a); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "automation.create", a.ID, a.Name)
+		writeJSON(w, 201, a)
+	case http.MethodPatch:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in struct {
+			ID          string   `json:"id"`
+			Enabled     *bool    `json:"enabled"`
+			Name        *string  `json:"name"`
+			TriggerKind *string  `json:"trigger_kind"`
+			Capability  *string  `json:"capability"`
+			Operator    *string  `json:"operator"`
+			Threshold   *float64 `json:"threshold"`
+			Action      *string  `json:"action"`
+			Config      *string  `json:"config"`
+			Delete      bool     `json:"delete"`
+		}
+		if err := readJSON(r, &in); err != nil || in.ID == "" {
+			writeJSON(w, 400, map[string]string{"error": "id required"})
+			return
+		}
+		if in.Delete {
+			if err := s.Store.DeleteAutomation(r.Context(), u.OrganizationID, in.ID); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, map[string]string{"deleted": in.ID})
+			return
+		}
+		list, err := s.Store.ListAutomations(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		var cur *model.Automation
+		for i := range list {
+			if list[i].ID == in.ID {
+				cur = &list[i]
+				break
+			}
+		}
+		if cur == nil {
+			writeJSON(w, 404, map[string]string{"error": "not found"})
+			return
+		}
+		if in.Enabled != nil && in.Name == nil && in.Action == nil && in.TriggerKind == nil && in.Capability == nil && in.Operator == nil && in.Threshold == nil && in.Config == nil {
+			if err := s.Store.SetAutomationEnabled(r.Context(), u.OrganizationID, in.ID, *in.Enabled); err != nil {
+				writeJSON(w, 500, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, map[string]any{"id": in.ID, "enabled": *in.Enabled})
+			return
+		}
+		if in.Enabled != nil {
+			cur.Enabled = *in.Enabled
+		}
+		if in.Name != nil {
+			cur.Name = *in.Name
+		}
+		if in.TriggerKind != nil {
+			cur.TriggerKind = *in.TriggerKind
+		}
+		if in.Capability != nil {
+			cur.Capability = *in.Capability
+		}
+		if in.Operator != nil {
+			cur.Operator = *in.Operator
+		}
+		if in.Threshold != nil {
+			cur.Threshold = *in.Threshold
+		}
+		if in.Action != nil {
+			cur.Action = *in.Action
+		}
+		if in.Config != nil {
+			cur.Config = *in.Config
+		}
+		if err := s.Store.UpdateAutomation(r.Context(), cur); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, cur)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) audit(w http.ResponseWriter, r *http.Request, u *model.User) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	if !s.requireWrite(w, u) {
+		return
+	}
+	list, err := s.Store.ListAudit(r.Context(), u.OrganizationID, 200)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("token") != "" {
+		writeJSON(w, 401, map[string]string{"error": "stream requires a single-use ticket"})
+		return
+	}
+	ticket := r.URL.Query().Get("ticket")
+	if ticket == "" {
+		writeJSON(w, 401, map[string]string{"error": "ticket required"})
+		return
+	}
+	sum := sha256.Sum256([]byte(ticket))
+	userID, _, err := s.Store.ConsumeStreamTicket(r.Context(), hex.EncodeToString(sum[:]))
+	if err != nil {
+		writeJSON(w, 401, map[string]string{"error": "invalid or expired ticket"})
+		return
+	}
+	u, err := s.Store.UserByID(r.Context(), userID)
+	if err != nil || !u.Active {
+		writeJSON(w, 401, map[string]string{"error": "unauthorized"})
+		return
+	}
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		writeJSON(w, 500, map[string]string{"error": "stream unsupported"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	ch := s.Hub.Subscribe(u.OrganizationID)
+	defer s.Hub.Unsubscribe(ch)
+	_, _ = w.Write([]byte("event: ready\ndata: {}\n\n"))
+	fl.Flush()
+	tick := time.NewTicker(25 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-tick.C:
+			_, _ = w.Write([]byte(": ping\n\n"))
+			fl.Flush()
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			_, _ = w.Write([]byte("data: "))
+			_, _ = w.Write(msg)
+			_, _ = w.Write([]byte("\n\n"))
+			fl.Flush()
+		}
+	}
+}
+
+func (s *Server) locations(w http.ResponseWriter, r *http.Request, u *model.User) {
+	switch r.Method {
+	case http.MethodGet:
+		list, err := s.Store.ListLocations(r.Context(), u.OrganizationID)
+		if err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, list)
+	case http.MethodPost:
+		if !s.requireWrite(w, u) {
+			return
+		}
+		var in store.Location
+		if err := readJSON(r, &in); err != nil || in.Name == "" {
+			writeJSON(w, 400, map[string]string{"error": "name required"})
+			return
+		}
+		in.OrganizationID = u.OrganizationID
+		if in.ParentID != nil && *in.ParentID != "" {
+			if err := s.Store.LocationInOrg(r.Context(), u.OrganizationID, *in.ParentID); err != nil {
+				writeJSON(w, 400, map[string]string{"error": "parent location not found"})
+				return
+			}
+		}
+		if err := s.Store.CreateLocation(r.Context(), &in); err != nil {
+			writeJSON(w, 500, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = s.Store.Audit(r.Context(), u.OrganizationID, u.Email, "location.create", in.ID, in.Name)
+		writeJSON(w, 201, in)
+	default:
+		writeJSON(w, 405, map[string]string{"error": "method"})
+	}
+}
+
+func (s *Server) onboarding(w http.ResponseWriter, r *http.Request, u *model.User) {
+	assets, _ := s.Store.ListAssets(r.Context(), u.OrganizationID, "", "", "")
+	incidents, _ := s.Store.ListIncidents(r.Context(), u.OrganizationID, "")
+	connectors, _ := s.Store.ListConnectors(r.Context(), u.OrganizationID)
+	connected := false
+	for _, c := range connectors {
+		if c.Status == "connected" || c.Kind == "simulator" || c.Kind == "http-ingest" {
+			connected = true
+			break
+		}
+	}
+	steps := []map[string]any{
+		{"id": "workspace", "title": "Workspace ready", "body": "Your organization is seeded and ready.", "done": true},
+		{"id": "source", "title": "Connect a source", "body": "Use the included simulator or a Device Agent gateway.", "done": connected, "href": "/integrations"},
+		{"id": "discover", "title": "Discover assets", "body": "Inventory arrives as assets — devices are one kind.", "done": len(assets) > 0, "href": "/assets"},
+		{"id": "health", "title": "Inspect health", "body": "Open Overview or Map to see freshness and health.", "done": len(assets) > 0, "href": "/"},
+		{"id": "alert", "title": "Create an alert", "body": "Temperature or missed heartbeat opens an incident you can assign.", "done": len(incidents) > 0, "href": "/incidents"},
+	}
+	doneN := 0
+	for _, st := range steps {
+		if st["done"] == true {
+			doneN++
+		}
+	}
+	writeJSON(w, 200, map[string]any{"steps": steps, "completed": doneN, "total": len(steps)})
+}
+
+type nominatimResult struct {
+	DisplayName string `json:"display_name"`
+	Lat         string `json:"lat"`
+	Lon         string `json:"lon"`
+}
+
+type geocodeResult struct {
+	DisplayName string  `json:"display_name"`
+	Lat         float64 `json:"lat"`
+	Lon         float64 `json:"lon"`
+}
+
+func (s *Server) geocode(w http.ResponseWriter, r *http.Request, u *model.User) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeJSON(w, 400, map[string]string{"error": "q required"})
+		return
+	}
+	if !s.limiter.allow("geocode") {
+		writeJSON(w, 429, map[string]string{"error": "geocode rate limit"})
+		return
+	}
+	upstream := "https://nominatim.openstreetmap.org/search?format=json&limit=5&q=" + url.QueryEscape(q)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upstream, nil)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": "geocode upstream failed"})
+		return
+	}
+	req.Header.Set("User-Agent", "Yard/1.0 (https://github.com/zyvorai/yard)")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": "geocode upstream failed"})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		writeJSON(w, 502, map[string]string{"error": "geocode upstream failed"})
+		return
+	}
+	var raw []nominatimResult
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		writeJSON(w, 502, map[string]string{"error": "geocode upstream failed"})
+		return
+	}
+	results := make([]geocodeResult, 0, len(raw))
+	for _, item := range raw {
+		lat, errLat := strconv.ParseFloat(item.Lat, 64)
+		lon, errLon := strconv.ParseFloat(item.Lon, 64)
+		if errLat != nil || errLon != nil {
+			continue
+		}
+		results = append(results, geocodeResult{DisplayName: item.DisplayName, Lat: lat, Lon: lon})
+	}
+	writeJSON(w, 200, map[string]any{"results": results})
+}
+
+func (s *Server) ingestObs(w http.ResponseWriter, r *http.Request, c *model.Connector) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var batch []model.IngestObservation
+	dec := json.NewDecoder(r.Body)
+	var first json.RawMessage
+	if err := dec.Decode(&first); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	if len(first) > 0 && first[0] == '[' {
+		if err := json.Unmarshal(first, &batch); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid array"})
+			return
+		}
+	} else {
+		var one model.IngestObservation
+		if err := json.Unmarshal(first, &one); err != nil {
+			writeJSON(w, 400, map[string]string{"error": "invalid object"})
+			return
+		}
+		batch = []model.IngestObservation{one}
+	}
+	accepted, skipped := 0, 0
+	for _, in := range batch {
+		obs, inserted, err := s.Engine.IngestObservation(r.Context(), c.OrganizationID, in, c.Kind)
+		if err != nil {
+			skipped++
+			continue
+		}
+		if inserted {
+			accepted++
+			s.Hub.Publish(c.OrganizationID, "observation", obs)
+		} else {
+			skipped++
+		}
+	}
+	s.metrics.inc(&s.metrics.ingestOK)
+	writeJSON(w, 202, map[string]int{"accepted": accepted, "duplicate_or_unknown": skipped})
+}
+
+func (s *Server) ingestInv(w http.ResponseWriter, r *http.Request, c *model.Connector) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var in model.IngestInventory
+	if err := readJSON(r, &in); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	if !validLatLng(in.Latitude, in.Longitude) {
+		writeJSON(w, 400, map[string]string{"error": "latitude/longitude out of range"})
+		return
+	}
+	a, err := s.Engine.IngestInventory(r.Context(), c.OrganizationID, in, c.Kind)
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	s.Hub.Publish(c.OrganizationID, "inventory", a)
+	writeJSON(w, 202, a)
+}
+
+func (s *Server) ingestEvt(w http.ResponseWriter, r *http.Request, c *model.Connector) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method"})
+		return
+	}
+	var e model.Event
+	if err := readJSON(r, &e); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "invalid json"})
+		return
+	}
+	e.OrganizationID = c.OrganizationID
+	if e.Kind == "" {
+		e.Kind = "external"
+	}
+	if e.Severity == "" {
+		e.Severity = "info"
+	}
+	ok, err := s.Store.InsertEvent(r.Context(), &e)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	if ok {
+		s.Hub.Publish(c.OrganizationID, "event", e)
+	}
+	writeJSON(w, 202, map[string]any{"accepted": ok, "event": e})
+}
+
+func (s *Server) spa() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if p == "" {
+			p = "index.html"
+		}
+		f, err := s.Static.Open(p)
+		if err != nil {
+			index, err2 := s.Static.Open("index.html")
+			if err2 != nil {
+				http.NotFound(w, r)
+				return
+			}
+			defer index.Close()
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = io.Copy(w, index)
+			return
+		}
+		defer f.Close()
+		stat, _ := f.Stat()
+		if stat != nil && stat.IsDir() {
+			index, err2 := s.Static.Open("index.html")
+			if err2 != nil {
+				http.NotFound(w, r)
+				return
+			}
+			defer index.Close()
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = io.Copy(w, index)
+			return
+		}
+		if strings.HasSuffix(p, ".webmanifest") {
+			w.Header().Set("Content-Type", "application/manifest+json")
+		}
+		http.ServeContent(w, r, p, time.Time{}, f.(io.ReadSeeker))
+	})
+}
+
+func DefaultDSN() string {
+	if v := os.Getenv("YARD_DATABASE_URL"); v != "" {
+		return v
+	}
+	return "file:data/yard.db?_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+}

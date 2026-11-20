@@ -1,0 +1,5 @@
+name: servicenow
+kind: servicenow
+action: incident.create
+body:
+  short_description: Yard incident

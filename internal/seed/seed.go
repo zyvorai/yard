@@ -1,0 +1,375 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+package seed
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strings"
+
+	"github.com/zyvorai/yard/internal/idgen"
+	"github.com/zyvorai/yard/internal/model"
+	"github.com/zyvorai/yard/internal/store"
+	"golang.org/x/crypto/bcrypt"
+)
+
+const DemoEmail = "admin@yard.local"
+const DemoPassword = "yard-admin"
+
+type Result struct {
+	Organization *model.Organization
+	User         *model.User
+	IngestToken  string
+	SimulatorTok string
+}
+
+func HashToken(tok string) string {
+	sum := sha256.Sum256([]byte(tok))
+	return hex.EncodeToString(sum[:])
+}
+
+func Bootstrap(ctx context.Context, st *store.Store) (*Result, error) {
+	return BootstrapWith(ctx, st, Options{Mode: "demo"})
+}
+
+// Options selects demo seed data or a production first-admin bootstrap.
+type Options struct {
+	Mode              string
+	BootstrapEmail    string
+	BootstrapPassword string
+	PublicURL         string
+}
+
+func BootstrapWith(ctx context.Context, st *store.Store, opt Options) (*Result, error) {
+	if opt.Mode == "" {
+		opt.Mode = "demo"
+	}
+	if opt.Mode != "demo" && opt.Mode != "production" {
+		return nil, fmt.Errorf("YARD_MODE must be demo or production")
+	}
+	if err := refuseDemoPassword(ctx, st, opt.Mode); err != nil {
+		return nil, err
+	}
+	n, err := st.CountOrgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if n > 0 {
+		if opt.Mode == "production" {
+			return &Result{}, nil
+		}
+		u, err := st.UserByEmail(ctx, DemoEmail)
+		if err != nil {
+			return nil, err
+		}
+		_ = EnsureSeverityPolicies(ctx, st, u.OrganizationID)
+		return &Result{User: u}, nil
+	}
+	if opt.Mode == "production" {
+		return bootstrapProduction(ctx, st, opt)
+	}
+	return bootstrapDemo(ctx, st)
+}
+
+func refuseDemoPassword(ctx context.Context, st *store.Store, mode string) error {
+	if mode != "production" {
+		return nil
+	}
+	u, err := st.UserByEmail(ctx, DemoEmail)
+	if err != nil {
+		return nil
+	}
+	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(DemoPassword)) == nil {
+		return fmt.Errorf("production mode refuses the public demo password for %s", DemoEmail)
+	}
+	return nil
+}
+
+func bootstrapProduction(ctx context.Context, st *store.Store, opt Options) (*Result, error) {
+	email := strings.TrimSpace(opt.BootstrapEmail)
+	pass := opt.BootstrapPassword
+	if email == "" || pass == "" || strings.TrimSpace(opt.PublicURL) == "" {
+		return nil, fmt.Errorf("production bootstrap requires YARD_BOOTSTRAP_EMAIL, YARD_BOOTSTRAP_PASSWORD, and YARD_PUBLIC_URL")
+	}
+	if strings.EqualFold(email, DemoEmail) || pass == DemoPassword {
+		return nil, fmt.Errorf("production bootstrap cannot use the public demo credentials")
+	}
+	if len(pass) < 8 {
+		return nil, fmt.Errorf("production bootstrap password must be at least 8 characters")
+	}
+	slug := slugFromEmail(email)
+	org, err := st.CreateOrganization(ctx, "Operations", slug)
+	if err != nil {
+		return nil, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pass), 10)
+	if err != nil {
+		return nil, err
+	}
+	user := &model.User{
+		OrganizationID: org.ID,
+		Email:          email,
+		DisplayName:    "Administrator",
+		Role:           "admin",
+		Active:         true,
+		PasswordHash:   string(hash),
+	}
+	if err := st.CreateUser(ctx, user); err != nil {
+		return nil, err
+	}
+	if err := EnsureSeverityPolicies(ctx, st, org.ID); err != nil {
+		return nil, err
+	}
+	_ = st.Audit(ctx, org.ID, user.Email, "workspace.create", org.ID, "Production workspace created without sample data")
+	return &Result{Organization: org, User: user}, nil
+}
+
+func slugFromEmail(email string) string {
+	local := email
+	if i := strings.IndexByte(email, '@'); i > 0 {
+		local = email[:i]
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(local) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	s := b.String()
+	if s == "" {
+		return "workspace"
+	}
+	return s
+}
+
+func bootstrapDemo(ctx context.Context, st *store.Store) (*Result, error) {
+	n, err := st.CountOrgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if n > 0 {
+		u, err := st.UserByEmail(ctx, DemoEmail)
+		if err != nil {
+			return nil, err
+		}
+		_ = EnsureSeverityPolicies(ctx, st, u.OrganizationID)
+		return &Result{User: u}, nil
+	}
+	org, err := st.CreateOrganization(ctx, "Northwind Operations", "northwind")
+	if err != nil {
+		return nil, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(DemoPassword), 10)
+	if err != nil {
+		return nil, err
+	}
+	user := &model.User{
+		OrganizationID: org.ID,
+		Email:          DemoEmail,
+		DisplayName:    "Operations Admin",
+		Role:           "admin",
+		Active:         true,
+		PasswordHash:   string(hash),
+	}
+	if err := st.CreateUser(ctx, user); err != nil {
+		return nil, err
+	}
+
+	lat1, lng1 := 19.8762, 75.3433
+	lat2, lng2 := 19.9012, 75.3128
+	plant := &model.Site{OrganizationID: org.ID, Name: "Riverside Plant", Kind: "factory", Address: "MIDC Waluj, Aurangabad", Latitude: &lat1, Longitude: &lng1, Timezone: "Asia/Kolkata"}
+	wh := &model.Site{OrganizationID: org.ID, Name: "West Warehouse", Kind: "warehouse", Address: "Chikalthana, Aurangabad", Latitude: &lat2, Longitude: &lng2, Timezone: "Asia/Kolkata"}
+	if err := st.UpsertSite(ctx, plant); err != nil {
+		return nil, err
+	}
+	if err := st.UpsertSite(ctx, wh); err != nil {
+		return nil, err
+	}
+
+	type spec struct {
+		name, ref, kind, mfr, model, serial, site string
+		lat, lng                                  float64
+		caps                                      []model.Capability
+	}
+	assets := []spec{
+		{"Edge gateway ZY-GW-0001", "ZY-GW-0001", "device", "Zyvor", "Device Agent", "DA-9188-0001", plant.ID, 19.8764, 75.3431, []model.Capability{
+			{Name: "cpu_temp", Kind: "measurement", Unit: "°C"},
+			{Name: "heartbeat", Kind: "presence", Unit: "1"},
+			{Name: "uptime", Kind: "measurement", Unit: "s"},
+		}},
+		{"Cold room sensor CR-12", "ZY-SEN-0412", "sensor", "Sensirion", "SHT40", "SHT-0412", plant.ID, 19.8760, 75.3436, []model.Capability{
+			{Name: "temperature", Kind: "measurement", Unit: "°C", Max: f64(8)},
+			{Name: "humidity", Kind: "measurement", Unit: "%"},
+		}},
+		{"Process pump P-03", "ZY-PUMP-03", "machine", "Grundfos", "CR 15-3", "GF-8803", plant.ID, 19.8768, 75.3440, []model.Capability{
+			{Name: "temperature", Kind: "measurement", Unit: "°C", Max: f64(80)},
+			{Name: "vibration", Kind: "measurement", Unit: "mm/s"},
+			{Name: "heartbeat", Kind: "presence", Unit: "1"},
+		}},
+		{"CNC mill Line A", "ZY-CNC-08", "machine", "Haas", "VF-2", "HAAS-2208", plant.ID, 19.8758, 75.3428, []model.Capability{
+			{Name: "spindle_load", Kind: "measurement", Unit: "%"},
+			{Name: "heartbeat", Kind: "presence", Unit: "1"},
+		}},
+		{"Service van 17", "ZY-VEH-17", "vehicle", "Tata", "Ace", "MH20-AB-4417", wh.ID, 19.9010, 75.3132, []model.Capability{
+			{Name: "speed", Kind: "measurement", Unit: "km/h"},
+			{Name: "fuel", Kind: "measurement", Unit: "%"},
+			{Name: "heartbeat", Kind: "presence", Unit: "1"},
+		}},
+		{"Dock door sensor D-2", "ZY-SEN-D2", "sensor", "Honeywell", "Limit", "LIM-D2", wh.ID, 19.9014, 75.3124, []model.Capability{
+			{Name: "open", Kind: "state", Unit: "1"},
+			{Name: "heartbeat", Kind: "presence", Unit: "1"},
+		}},
+		{"Simulator thermal load", "SIM-TEMP-A", "equipment", "Yard", "Sim v1", "SIM-A", plant.ID, 19.8765, 75.3438, []model.Capability{
+			{Name: "temperature", Kind: "measurement", Unit: "°C", Max: f64(75)},
+			{Name: "heartbeat", Kind: "presence", Unit: "1"},
+		}},
+	}
+	for _, sp := range assets {
+		siteID := sp.site
+		lat, lng := sp.lat, sp.lng
+		a := &model.Asset{
+			OrganizationID: org.ID,
+			SiteID:         &siteID,
+			Name:           sp.name,
+			ExternalRef:    sp.ref,
+			Kind:           sp.kind,
+			Status:         "active",
+			Health:         "healthy",
+			Manufacturer:   sp.mfr,
+			Model:          sp.model,
+			Serial:         sp.serial,
+			Latitude:       &lat,
+			Longitude:      &lng,
+			StaleAfterSec:  90,
+			Metadata:       `{"source":"seed"}`,
+		}
+		if err := st.UpsertAsset(ctx, a); err != nil {
+			return nil, err
+		}
+		for i := range sp.caps {
+			sp.caps[i].AssetID = a.ID
+		}
+		if err := st.ReplaceCapabilities(ctx, a.ID, sp.caps); err != nil {
+			return nil, err
+		}
+	}
+
+	ingestTok := "yard_ingyard_" + idgen.Secret(16)
+	simTok := "yard_sim_" + idgen.Secret(16)
+	httpConn := &model.Connector{
+		OrganizationID: org.ID,
+		Name:           "Generic HTTP ingestion",
+		Kind:           "http",
+		Status:         "connected",
+		Endpoint:       "/api/v1/ingest",
+		TokenHint:      ingestTok[:12] + "…",
+		TokenHash:      HashToken(ingestTok),
+		Actions:        `["ingest.observation","ingest.inventory","ingest.event"]`,
+	}
+	simConn := &model.Connector{
+		OrganizationID: org.ID,
+		Name:           "Included simulator",
+		Kind:           "simulator",
+		Status:         "connected",
+		Endpoint:       "internal://simulator",
+		TokenHint:      simTok[:12] + "…",
+		TokenHash:      HashToken(simTok),
+		Actions:        `["ingest.observation","ingest.inventory"]`,
+	}
+	agentConn := &model.Connector{
+		OrganizationID: org.ID,
+		Name:           "Device Agent gateway",
+		Kind:           "device-agent",
+		Status:         "pending",
+		Endpoint:       "http://127.0.0.1:9188",
+		Actions:        `["inventory.refresh","diagnostics.read"]`,
+		Config:         `{"poll_seconds":15,"path_inventory":"/api/v1/inventory","path_sensors":"/api/v1/sensors"}`,
+	}
+	nodra := &model.Connector{OrganizationID: org.ID, Name: "Nodra (optional)", Kind: "nodra", Status: "available", Endpoint: "", Actions: `["telemetry.receive"]`, Config: `{"optional":true}`}
+	fleet := &model.Connector{OrganizationID: org.ID, Name: "Zyvor Fleet (optional)", Kind: "fleet", Status: "available", Endpoint: "", Actions: `["lifecycle.request","desired.progress"]`, Config: `{"optional":true}`}
+	ota := &model.Connector{OrganizationID: org.ID, Name: "OTA campaigns (optional)", Kind: "ota", Status: "available", Endpoint: "", Actions: `["campaign.list","update.delegate"]`, Config: `{"optional":true}`}
+	for _, c := range []*model.Connector{httpConn, simConn, agentConn, nodra, fleet, ota} {
+		if err := st.CreateConnector(ctx, c); err != nil {
+			return nil, err
+		}
+	}
+
+	autos := []model.Automation{
+		{OrganizationID: org.ID, Name: "High temperature incident", Enabled: true, TriggerKind: "threshold", Capability: "temperature", Operator: "gt", Threshold: 75, Action: "open_incident"},
+		{OrganizationID: org.ID, Name: "Missed heartbeat", Enabled: true, TriggerKind: "stale", Capability: "heartbeat", Operator: "missing", Threshold: 90, Action: "open_incident"},
+		{OrganizationID: org.ID, Name: "Notify on critical event", Enabled: true, TriggerKind: "event", Capability: "", Operator: "eq", Threshold: 0, Action: "notify"},
+	}
+	for i := range autos {
+		if err := st.CreateAutomation(ctx, &autos[i]); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := EnsureSeverityPolicies(ctx, st, org.ID); err != nil {
+		return nil, err
+	}
+
+	_ = st.Audit(ctx, org.ID, user.Email, "workspace.create", org.ID, "Seeded first workspace, sites, assets, connectors")
+	return &Result{Organization: org, User: user, IngestToken: ingestTok, SimulatorTok: simTok}, nil
+}
+
+// EnsureSeverityPolicies seeds default severity/runbook policies when an org has none.
+func EnsureSeverityPolicies(ctx context.Context, st *store.Store, orgID string) error {
+	n, err := st.CountSeverityPolicies(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	policies := []model.SeverityPolicy{
+		{
+			OrganizationID: orgID,
+			Name:           "Temperature trip",
+			MatchKind:      "capability",
+			MatchValue:     "temperature",
+			Severity:       "critical",
+			Priority:       100,
+			Runbook:        "1. Confirm live reading on Telemetry.\n2. Isolate load / cool the zone.\n3. Open a work order if still above threshold after 10 minutes.\n4. Document root cause before resolve.",
+		},
+		{
+			OrganizationID: orgID,
+			Name:           "Missed heartbeat",
+			MatchKind:      "capability",
+			MatchValue:     "heartbeat",
+			Severity:       "warning",
+			Priority:       80,
+			Runbook:        "1. Check asset power and network path.\n2. Verify Device Agent / connector last sync.\n3. Ping site gateway; restore telemetry.\n4. Escalate to critical if silent > 30 minutes.",
+		},
+		{
+			OrganizationID: orgID,
+			Name:           "Default incident",
+			MatchKind:      "default",
+			MatchValue:     "",
+			Severity:       "warning",
+			Priority:       0,
+			Runbook:        "1. Acknowledge and assign an owner.\n2. Capture evidence from telemetry and events.\n3. Create a work order if field action is needed.\n4. Resolve with a short resolution note.",
+		},
+	}
+	for i := range policies {
+		if err := st.CreateSeverityPolicy(ctx, &policies[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func f64(v float64) *float64 { return &v }
+
+func FormatWelcome(r *Result) string {
+	if r == nil || r.Organization == nil {
+		return "workspace already exists"
+	}
+	if r.IngestToken == "" {
+		return fmt.Sprintf("workspace=%s bootstrap complete", r.Organization.Slug)
+	}
+	return fmt.Sprintf("workspace=%s bootstrap complete; connector tokens were written under the data directory", r.Organization.Slug)
+}

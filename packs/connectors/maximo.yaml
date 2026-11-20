@@ -1,0 +1,5 @@
+name: maximo
+kind: maximo
+action: workorder.create
+body:
+  description: Yard work order

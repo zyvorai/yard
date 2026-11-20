@@ -1,0 +1,44 @@
+# Binaries
+bin/
+dist/
+*.exe
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Node
+web/node_modules/
+web/dist/
+web/.vite/
+sdk/ts/node_modules/
+sdk/ts/dist/
+
+# Env & secrets
+.env
+.env.local
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (top-level runtime dir only — not src/data/ folders like website/src/data/)
+/data/
+/backups/
+.deploy-last
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Logs
+*.log
+
+*.tsbuildinfo
+web/tsconfig.tsbuildinfo
