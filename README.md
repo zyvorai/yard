@@ -24,8 +24,6 @@
 
 </div>
 
-[Client overview (PDF)](docs/Yard-Client-Overview.pdf)
-
 ---
 
 ## What's new
@@ -94,25 +92,6 @@ Viewer, operator and admin roles; per-person API keys; rate-limited logins. An u
 </td>
 </tr>
 </table>
-
----
-
-## Yard vs ThingsBoard
-
-![Yard vs ThingsBoard: from telemetry to a closed work order](docs/ux/readme-vs.jpg)
-
-| | **Yard** | **ThingsBoard** (open-source IoT platform) |
-|---|---|---|
-| Centre of gravity | The asset and the operations work around it | Device connectivity, telemetry and dashboards |
-| Asset model | Devices, vehicles, machines, sensors and equipment in one model, placed on sites | Devices and assets with relations |
-| Data quality | Every observation carries source, unit, quality and timestamps; missed heartbeats mark assets stale | Time-series telemetry and attributes |
-| Response | Automations open incidents; severity policies attach runbooks | Rule chains raise alarms and trigger actions |
-| Maintenance | Work orders, parts and labor, Field page, recorded resolution | Not the focus; work orders usually live in a separate CMMS |
-| Footprint | One Go binary with an embedded console; SQLite built in, Postgres optional | Java service with its own database setup |
-| Edge integration | Optional Device Agent, Nodra, Fleet and OTA connectors | Its own gateway and device protocols (MQTT, HTTP, CoAP and more) |
-| **Choose ThingsBoard when** | | Your main need is a device-data platform with protocol breadth, a visual rule engine and a dashboard builder |
-
-Yard owns the operations surface and stays out of protocol decoding and desired state; see [How it fits together](#how-it-fits-together).
 
 ---
 
