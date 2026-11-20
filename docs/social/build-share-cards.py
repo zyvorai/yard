@@ -34,8 +34,8 @@ DARK = dict(
 SANS = "'Helvetica Neue',Helvetica,Arial,sans-serif"
 MONO = "'Menlo','JetBrains Mono',monospace"
 
-# Verified against README.md / go.mod: standalone, Apache-2.0, Go 1.27+.
-CHIPS = [("RUNS STANDALONE", True), ("APACHE-2.0", False), ("GO 1.27+", False)]
+# Verified against README.md / go.mod: standalone, Zyvor Production License, Go 1.27+.
+CHIPS = [("RUNS STANDALONE", True), ("ZYVOR PRODUCTION", False), ("GO 1.27+", False)]
 
 
 def chips(p):

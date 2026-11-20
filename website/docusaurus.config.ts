@@ -133,7 +133,7 @@ const config: Config = {
               href: 'https://github.com/zyvorai/yard/blob/main/docs/ROADMAP.md',
             },
             {
-              label: 'License (Apache-2.0)',
+              label: 'License (Zyvor Production 1.0)',
               href: 'https://github.com/zyvorai/yard/blob/main/LICENSE',
             },
           ],
@@ -146,7 +146,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Zyvor. Yard is Apache-2.0 licensed.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Zyvor. Yard is licensed under the Zyvor Production License v1.0.`,
     },
     prism: {
       theme: prismThemes.github,

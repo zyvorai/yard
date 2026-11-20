@@ -58,7 +58,7 @@ function TourCTA() {
         <Reveal>
           <Heading as="h2">See it running in a minute</Heading>
           <p className={styles.ctaCopy}>
-            Yard&rsquo;s core is Apache-2.0. Clone it, run it, and register
+            Yard&rsquo;s core is under the Zyvor Production License. Clone it, run it, and register
             your first asset without touching a connector.
           </p>
           <div className={styles.ctaButtons}>

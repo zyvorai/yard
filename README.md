@@ -3,7 +3,7 @@
 # Yard
 
 [![CI](https://img.shields.io/github/actions/workflow/status/zyvorai/yard/ci.yml?branch=main&style=flat-square&labelColor=1d1d1f&label=CI)](https://github.com/zyvorai/yard/actions/workflows/ci.yml)
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-0071e3?style=flat-square&labelColor=1d1d1f)](LICENSE)
+[![License: Zyvor Production](https://img.shields.io/badge/license-Zyvor%20Production%201.0-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-zyvorai.github.io%2Fyard-0071e3?style=flat-square&labelColor=1d1d1f)](https://zyvorai.github.io/yard/)
 [![Go 1.27+](https://img.shields.io/badge/go-1.27%2B-0071e3?style=flat-square&labelColor=1d1d1f&logo=go&logoColor=white)](go.mod)
 [![React 18](https://img.shields.io/badge/react-18-0071e3?style=flat-square&labelColor=1d1d1f&logo=react&logoColor=white)](web/package.json)
@@ -230,13 +230,14 @@ Yard tracks its scope as sixteen programs, each marked **Have**, **Partial** or 
 
 ## Support
 
-Free under Apache-2.0. If it helps you, you can donate any amount you like: <https://rzp.io/rzp/utwdYh3>. A donation is voluntary and supports development and maintenance. It is not a purchase: it buys no support, SLA, features, priority or license, and it is not tax-deductible (Zyvor AI Labs Private Limited is a company, not a charity). Support contracts are separate: [sales@zyvor.dev](mailto:sales@zyvor.dev).
+Non-production use is free under the Zyvor Production License v1.0; production use requires a commercial license (sales@zyvor.dev). If it helps you, you can donate any amount you like: <https://rzp.io/rzp/utwdYh3>. A donation is voluntary and supports development and maintenance. It is not a purchase: it buys no support, SLA, features, priority or license, and it is not tax-deductible (Zyvor AI Labs Private Limited is a company, not a charity). Support contracts are separate: [sales@zyvor.dev](mailto:sales@zyvor.dev).
 
 ## License
 
-Yard is **free and open source** under the [Apache License, Version 2.0](LICENSE).
-You may use, modify, and run it for personal, lab, and commercial production
-use at no charge, subject to Apache-2.0 (preserve notices / [NOTICE](NOTICE) where required).
+Yard is source-available under the **[Zyvor Production License v1.0](LICENSE)** (SPDX `LicenseRef-Zyvor-Production-1.0`, also in [LICENSES/](LICENSES/LicenseRef-Zyvor-Production-1.0.txt); see [NOTICE](NOTICE)).
+
+- **Free** for evaluation, development, testing, proofs of concept, research, education and all other non-production use.
+- **Production use needs a commercial license** from Zyvor AI Labs. A 30-day trial key is available for production evaluation. Buy / get a quote: [zyvor.dev/buy](https://zyvor.dev/buy) · [sales@zyvor.dev](mailto:sales@zyvor.dev).
 
 **Zyvor Enterprise** adds what production teams ask for: supported releases, deployment and upgrade guidance, priority incident triage, a named technical contact and 24x7 critical intake. Production support, SLAs, and Zyvor Enterprise products are licensed separately. Plans and terms: [docs/SUBSCRIPTION-MODEL.md](docs/SUBSCRIPTION-MODEL.md) · [Pricing](https://zyvor.dev/pricing?utm_source=github&utm_medium=yard&utm_campaign=readme_license) · [sales@zyvor.dev](mailto:sales@zyvor.dev).
 

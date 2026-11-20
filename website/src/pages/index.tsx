@@ -91,7 +91,7 @@ function TrustBand() {
     <section className={styles.trust}>
       <div className="container">
         <Reveal className={styles.statLines}>
-          <p className={styles.statLine}>Apache-2.0.</p>
+          <p className={styles.statLine}>Zyvor Production License.</p>
           <p className={styles.statLine}>No lock-in.</p>
           <p className={styles.statLine}>Every connector optional.</p>
         </Reveal>
@@ -113,8 +113,8 @@ function TrustBand() {
               alt="CI status"
             />
             <img
-              src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"
-              alt="Apache 2.0 license"
+              src="https://img.shields.io/badge/license-Zyvor%20Production%201.0-blue.svg"
+              alt="Zyvor Production License v1.0"
             />
           </div>
         </Reveal>
@@ -132,7 +132,7 @@ function EnterpriseCTA() {
             Need production support or SLAs?
           </Heading>
           <p className={styles.enterpriseCopy}>
-            Yard’s core is Apache-2.0 and free to run. Zyvor Enterprise adds
+            Yard’s core is under the Zyvor Production License: free for non-production use, with production use under a commercial license. Zyvor Enterprise adds
             support contracts, SLAs, and additional products for teams that
             need them.
           </p>

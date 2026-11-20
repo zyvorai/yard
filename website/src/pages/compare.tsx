@@ -23,8 +23,8 @@ const ROWS: Row[] = [
   {label: 'Self-hosted (SQLite or Postgres)', core: true, enterprise: true},
   {label: 'Community support (GitHub issues)', core: true, enterprise: true},
   {label: 'Production support and SLAs', core: false, enterprise: true},
-  {label: 'License', core: 'Apache-2.0', enterprise: 'Apache-2.0 core'},
-  {label: 'Price', core: 'Free', enterprise: 'Contact sales'},
+  {label: 'License', core: 'Zyvor Production 1.0 (free non-production)', enterprise: 'Zyvor Production 1.0 core'},
+  {label: 'Price', core: 'Free non-production', enterprise: 'Contact sales'},
 ];
 
 function Mark({value}: {value: Cell}) {
@@ -44,7 +44,7 @@ function CompareHeader() {
           Compare
         </Heading>
         <p className={styles.subtitle}>
-          One codebase, Apache-2.0 core. Add support and optional connectors
+          One codebase, Zyvor Production License core. Add support and optional connectors
           only if you need them.
         </p>
       </div>
@@ -63,7 +63,7 @@ function CompareTable() {
                 <th></th>
                 <th>
                   <div className={styles.planName}>Yard Core</div>
-                  <div className={styles.planTag}>Open source, self-hosted</div>
+                  <div className={styles.planTag}>Source-available, self-hosted</div>
                 </th>
                 <th>
                   <div className={styles.planName}>Zyvor Enterprise</div>
@@ -126,7 +126,7 @@ export default function Compare(): ReactNode {
   return (
     <Layout
       title="Compare"
-      description="Compare Yard Core (Apache-2.0, self-hosted) with Zyvor Enterprise support and optional connectors.">
+      description="Compare Yard Core (Zyvor Production License, self-hosted) with Zyvor Enterprise support and optional connectors.">
       <CompareHeader />
       <main>
         <CompareTable />
