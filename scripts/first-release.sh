@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 set -euo pipefail
 # Exercises the first-release gate against a running Yard instance.
 BASE=${YARD_URL:-http://127.0.0.1:8080}

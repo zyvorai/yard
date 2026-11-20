@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { getToken } from "./lib/api";
 import Shell from "./components/Shell";

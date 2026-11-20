@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { FormEvent, useEffect, useState } from "react";
 import { api, getToken, WorkOrder } from "../lib/api";
 import { flushQueue, queueChange, readOrders, readQueue, writeOrders, type FieldOrder } from "../lib/fieldQueue";

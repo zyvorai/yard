@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { useCallback, useEffect, useState } from "react";
 import { api, Overview as Ov } from "../lib/api";
 import { fmt } from "../components/Shell";

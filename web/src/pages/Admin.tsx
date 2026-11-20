@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { FormEvent, useEffect, useState } from "react";
 import { api, AdminUser, APIKeyInfo, Connector, SeverityPolicy, clearToken } from "../lib/api";
 import { fmt, Health } from "../components/Shell";

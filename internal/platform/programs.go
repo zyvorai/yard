@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Package platform holds forward-looking contracts for Yard phases 4–16.
 // Concrete implementations land as those programs ship; these types keep
 // docs, CI, and API versioning aligned.

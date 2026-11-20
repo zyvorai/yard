@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Asset, WorkOrder } from "../lib/api";
