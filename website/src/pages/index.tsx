@@ -135,7 +135,7 @@ function EnterpriseCTA() {
             Need production support or SLAs?
           </Heading>
           <p className={styles.enterpriseCopy}>
-            Yard’s core is under the Zyvor Production License: free for non-production use, with production use under a commercial license. Zyvor Enterprise adds
+            Yard is under the Zyvor Production License; running it requires a commercial license. Zyvor Enterprise adds
             support contracts, SLAs, and additional products for teams that
             need them.
           </p>
@@ -144,9 +144,6 @@ function EnterpriseCTA() {
             to="mailto:sales@zyvor.dev">
             Contact sales@zyvor.dev
           </Link>
-          <p style={{marginTop: '1rem'}}>
-            <Link to="/compare">See the full comparison →</Link>
-          </p>
         </Reveal>
       </div>
     </section>

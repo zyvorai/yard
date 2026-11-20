@@ -12,7 +12,7 @@
 [![30-day PoC](https://img.shields.io/badge/30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=yard&utm_campaign=readme_hero)
 [![Quickstart](https://img.shields.io/badge/Quickstart_with_go_run-30d158?style=for-the-badge)](#quickstart)
 
-[**Quickstart**](#quickstart) · [**Product tour**](https://zyvorai.github.io/yard/tour) · [**Compare**](https://zyvorai.github.io/yard/compare) · [**Docs**](docs/index.md) · [**Architecture**](docs/architecture.md)
+[**Quickstart**](#quickstart) · [**Product tour**](https://zyvorai.github.io/yard/tour) · [**Docs**](docs/index.md) · [**Architecture**](docs/architecture.md)
 
 <img src="docs/social/yard-hero-dark.jpg" alt="Yard - Every asset, every site. Stale is never healthy." width="100%">
 
@@ -173,7 +173,6 @@ Or run with Docker: `docker compose up --build`. Needs Go 1.27+ and Node 20+; SQ
 | --- | --- |
 | Documentation index | [docs/index.md](docs/index.md) |
 | Product docs | [zyvorai.github.io/yard](https://zyvorai.github.io/yard/) |
-| Compare | [Yard Core vs. Zyvor Enterprise](https://zyvorai.github.io/yard/compare) |
 | Feature catalog | [docs/ROADMAP.md](docs/ROADMAP.md) |
 | Programs 1–16 | [docs/PHASES.md](docs/PHASES.md) |
 | OpenAPI · SDKs | [openapi.yaml](openapi.yaml) · [sdk/](sdk/) — Go and TypeScript |

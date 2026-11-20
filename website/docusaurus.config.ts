@@ -94,11 +94,6 @@ const config: Config = {
           label: 'Tour',
         },
         {
-          to: '/compare',
-          position: 'left',
-          label: 'Compare',
-        },
-        {
           href: 'https://github.com/zyvorai/yard',
           label: 'GitHub',
           position: 'right',
@@ -117,7 +112,6 @@ const config: Config = {
           title: 'Docs',
           items: [
             {label: 'Product tour', to: '/tour'},
-            {label: 'Compare Core vs Enterprise', to: '/compare'},
             {label: 'Quickstart', to: '/docs/getting-started/quickstart'},
             {label: 'Architecture', to: '/docs/core-concepts/architecture'},
             {label: 'Console features', to: '/docs/guides/console'},

@@ -46,7 +46,7 @@ Live updates use a one-time ticket:
 | 13 | Energy, Sustainability, and Cost Intelligence | Tariffs, carbon, and a 7-day forecast are on `/cost` |
 | 14 | Vertical Solution Packs | Five packs import templates, a dashboard, automations, and a work order |
 | 15 | Developer and Community Ecosystem | Tag builds cover amd64 and arm64 and sign the checksum file with cosign keyless |
-| 16 | Commercial Platform | `/api/v1/meta` reports `edition: community`. Admins can export a compliance CSV. This repo does not bill |
+| 16 | Commercial Platform | `/api/v1/meta` reports an `edition` field. Admins can export a compliance CSV. This repo does not bill |
 
 OIDC login is `GET /api/v1/auth/oidc/start` and the callback at `/api/v1/auth/oidc/callback`. Production matches an existing user. Demo creates one only when `YARD_OIDC_PROVISION=1`. SAML is `POST /api/v1/auth/saml/acs`.
 

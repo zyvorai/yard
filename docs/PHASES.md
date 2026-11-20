@@ -31,7 +31,7 @@ Closing loop for the product:
 | 13. Energy, Sustainability, and Cost Intelligence | Have | Energy, downtime, replacement, tariffs, carbon, 7-day forecast | |
 | 14. Vertical Solution Packs | Have | Five packs import templates, a dashboard, two automations, and a work order | |
 | 15. Developer and Community Ecosystem | Have | Tag binaries, checksums, build info, amd64 and arm64, public programs page, keyless checksum signing | |
-| 16. Commercial Platform | Have | Community edition, compliance CSV | |
+| 16. Commercial Platform | Have | Edition flag, compliance CSV | |
 
 The public lab at `http://175.110.122.71:18081` runs **demo** mode. Demo credentials are valid there on purpose. A production install must set `YARD_MODE=production` (see [SECURITY.md](../SECURITY.md)).
 
@@ -161,7 +161,7 @@ A tag workflow builds `yard`, `yard-simulator`, and `yard-agent-gateway` for `li
 
 ## 16. Commercial Platform (Have)
 
-`GET /api/v1/meta` includes `edition: community`. `GET /api/v1/compliance/export` returns a CSV of the edition, users, and audit rows for an admin. [COMMERCIAL.md](./COMMERCIAL.md) states the boundary. This repository does not bill and does not run a license server. That is the finished community edition.
+`GET /api/v1/meta` includes an `edition` field. `GET /api/v1/compliance/export` returns a CSV of the edition, users, and audit rows for an admin. [COMMERCIAL.md](./COMMERCIAL.md) states the boundary. This repository does not bill and does not run a license server. That is the finished community edition.
 
 ## Explicitly out of scope until those programs need them
 

@@ -72,9 +72,6 @@ function TourCTA() {
               View on GitHub
             </Link>
           </div>
-          <p style={{marginTop: '1.5rem'}}>
-            <Link to="/compare">Compare Core vs Enterprise →</Link>
-          </p>
         </Reveal>
       </div>
     </section>

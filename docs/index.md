@@ -19,7 +19,6 @@ The README is the landing page; the detail lives here.
 | Resource | Link |
 | --- | --- |
 | Product docs | [zyvorai.github.io/yard](https://zyvorai.github.io/yard/) |
-| Compare | [Yard Core vs. Zyvor Enterprise](https://zyvorai.github.io/yard/compare) |
 | Feature catalog | [docs/ROADMAP.md](ROADMAP.md) |
 | Programs 1–16 | [docs/PHASES.md](PHASES.md) |
 | Connectors | [docs/CONNECTORS.md](CONNECTORS.md) |

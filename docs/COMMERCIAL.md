@@ -1,5 +1,5 @@
 # Commercial boundary
 
-This repository is the community edition. `GET /api/v1/meta` reports `edition: community`. `GET /api/v1/compliance/export` is the admin CSV of that edition, the users, and the audit log.
+`GET /api/v1/meta` reports an `edition` field (currently the API value `community`). `GET /api/v1/compliance/export` is the admin CSV of that edition, the users, and the audit log.
 
-There is no billing and no license server here. That boundary is the commercial program for this tree.
+There is no billing and no license server in this tree. A commercial license from Zyvor is required to run Yard (sales@zyvor.dev).
