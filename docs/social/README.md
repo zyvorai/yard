@@ -31,7 +31,7 @@ Type is Helvetica Neue with Menlo for code-ish labels. The Zyvor "Z" mark is dra
 (`#ff6a2a`) is the single dot in the caption; the small orange logo inside the screenshot is part of the real
 console capture.
 
-Copy is verified against `README.md` and `go.mod` (standalone, Zyvor Production License, Go 1.27+). The caption is true
+Copy is verified against `README.md` and `go.mod` (standalone, Zyvor Production Licence, Go 1.27+). The caption is true
 because `docs/ux/*.png` are captures from a lab deployment.
 
 ## GitHub Social preview

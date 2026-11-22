@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import { useCallback, useRef, useState } from "react";
 import Map, { Marker, type MapLayerMouseEvent, type MapRef } from "react-map-gl/maplibre";

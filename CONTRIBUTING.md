@@ -1,6 +1,6 @@
 # Contributing to Yard
 
-Yard is original software under the Zyvor Production License v1.0. Contributions are licensed under the same terms. Do not copy source from AGPL-licensed
+Yard is original software under the Zyvor Production Licence v2.0. Contributions are licensed under the same terms. Do not copy source from AGPL-licensed
 projects such as Fleetbase.
 
 ## Development
