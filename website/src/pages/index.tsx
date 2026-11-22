@@ -1,5 +1,5 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 
 import type {ReactNode} from 'react';
 import clsx from 'clsx';
@@ -94,7 +94,7 @@ function TrustBand() {
     <section className={styles.trust}>
       <div className="container">
         <Reveal className={styles.statLines}>
-          <p className={styles.statLine}>Zyvor Production License.</p>
+          <p className={styles.statLine}>Zyvor Production Licence.</p>
           <p className={styles.statLine}>No lock-in.</p>
           <p className={styles.statLine}>Every connector optional.</p>
         </Reveal>
@@ -117,7 +117,7 @@ function TrustBand() {
             />
             <img
               src="https://img.shields.io/badge/license-Zyvor%20Production%201.0-blue.svg"
-              alt="Zyvor Production License v1.0"
+              alt="Zyvor Production Licence v2.0"
             />
           </div>
         </Reveal>
@@ -135,7 +135,7 @@ function EnterpriseCTA() {
             Need production support or SLAs?
           </Heading>
           <p className={styles.enterpriseCopy}>
-            Yard is under the Zyvor Production License; running it requires a commercial license. Zyvor Enterprise adds
+            Yard is under the Zyvor Production Licence; running it requires a commercial license. Zyvor Enterprise adds
             support contracts, SLAs, and additional products for teams that
             need them.
           </p>

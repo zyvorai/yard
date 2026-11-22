@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
-# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-2.0
 # CI: SQLite backup/restore round-trip for Yard (software-class).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
